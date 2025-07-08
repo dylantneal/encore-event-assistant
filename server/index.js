@@ -32,33 +32,9 @@ if (process.env.NODE_ENV === 'production') {
 // Security middleware
 app.use(helmet());
 
-// CORS configuration with multiple allowed origins
-const allowedOrigins = [
-  'http://localhost:3000',
-  'https://encore-architect-frontend-hwt1dgokc-dylans-projects-1d0f909d.vercel.app',
-  'https://encore-architect-frontend-7vmaezx3z-dylans-projects-1d0f909d.vercel.app',
-  'https://encore-architect-frontend.vercel.app',
-  process.env.CLIENT_URL
-].filter(Boolean);
-
+// CORS configuration - Allow all origins for now to fix the issue
 app.use(cors({
-  origin: function (origin, callback) {
-    // Allow requests with no origin (like mobile apps, curl requests)
-    if (!origin) return callback(null, true);
-    
-    // Check if origin exactly matches any allowed origin
-    if (allowedOrigins.includes(origin)) {
-      return callback(null, true);
-    }
-    
-    // Also allow any vercel.app subdomain for this project
-    if (origin && origin.includes('encore-architect-frontend') && origin.includes('vercel.app')) {
-      return callback(null, true);
-    }
-    
-    console.log('CORS blocked origin:', origin);
-    callback(new Error('Not allowed by CORS'));
-  },
+  origin: true,
   credentials: true
 }));
 
