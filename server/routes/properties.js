@@ -1,7 +1,12 @@
 const express = require('express');
-const { getDatabase } = require('../database/init');
-// const { validateProperty } = require('../services/validation'); // Not needed - validation is inline
+const DatabaseAdapter = require('../database/adapter');
 const { logger } = require('../utils/logger');
+
+// Auto-detect database type and get the appropriate database connection
+const usePostgres = !!process.env.DATABASE_URL;
+const { getDatabase } = usePostgres 
+  ? require('../database/postgres-init') 
+  : require('../database/init');
 
 const router = express.Router();
 
@@ -9,19 +14,12 @@ const router = express.Router();
 router.get('/', async (req, res) => {
   try {
     const db = getDatabase();
+    const adapter = new DatabaseAdapter(db, usePostgres ? 'postgres' : 'sqlite');
     
-    db.all('SELECT * FROM properties ORDER BY name', (err, rows) => {
-      if (err) {
-        logger.error('Error fetching properties:', err);
-        return res.status(500).json({
-          error: 'Database Error',
-          message: 'Failed to fetch properties'
-        });
-      }
-      
-      logger.info(`Retrieved ${rows.length} properties`);
-      res.json(rows);
-    });
+    const rows = await adapter.all('SELECT * FROM properties ORDER BY name');
+    
+    logger.info(`Retrieved ${rows.length} properties`);
+    res.json(rows);
   } catch (error) {
     logger.error('Properties endpoint error:', error);
     res.status(500).json({
@@ -35,6 +33,7 @@ router.get('/', async (req, res) => {
 router.get('/:id', async (req, res) => {
   try {
     const db = getDatabase();
+    const adapter = new DatabaseAdapter(db, usePostgres ? 'postgres' : 'sqlite');
     const propertyId = parseInt(req.params.id);
     
     if (isNaN(propertyId)) {
@@ -44,25 +43,17 @@ router.get('/:id', async (req, res) => {
       });
     }
     
-    db.get('SELECT * FROM properties WHERE id = ?', [propertyId], (err, property) => {
-      if (err) {
-        logger.error('Error fetching property:', err);
-        return res.status(500).json({
-          error: 'Database Error',
-          message: 'Failed to fetch property'
-        });
-      }
-      
-      if (!property) {
-        return res.status(404).json({
-          error: 'Not Found',
-          message: 'Property not found'
-        });
-      }
-      
-      logger.info(`Retrieved property ${propertyId}`);
-      res.json(property);
-    });
+    const property = await adapter.get('SELECT * FROM properties WHERE id = ?', [propertyId]);
+    
+    if (!property) {
+      return res.status(404).json({
+        error: 'Not Found',
+        message: 'Property not found'
+      });
+    }
+    
+    logger.info(`Retrieved property ${propertyId}`);
+    res.json(property);
   } catch (error) {
     logger.error('Property endpoint error:', error);
     res.status(500).json({
@@ -77,26 +68,19 @@ router.get('/code/:code', async (req, res) => {
   try {
     const { code } = req.params;
     const db = getDatabase();
+    const adapter = new DatabaseAdapter(db, usePostgres ? 'postgres' : 'sqlite');
     
-    db.get('SELECT * FROM properties WHERE property_code = ?', [code], (err, property) => {
-      if (err) {
-        logger.error('Error fetching property by code:', err);
-        return res.status(500).json({
-          error: 'Database Error',
-          message: 'Failed to fetch property'
-        });
-      }
-      
-      if (!property) {
-        return res.status(404).json({
-          error: 'Not Found',
-          message: 'Property not found'
-        });
-      }
-      
-      logger.info(`Retrieved property by code ${code}`);
-      res.json(property);
-    });
+    const property = await adapter.get('SELECT * FROM properties WHERE property_code = ?', [code]);
+    
+    if (!property) {
+      return res.status(404).json({
+        error: 'Not Found',
+        message: 'Property not found'
+      });
+    }
+    
+    logger.info(`Retrieved property by code ${code}`);
+    res.json(property);
   } catch (error) {
     logger.error('Property by code endpoint error:', error);
     res.status(500).json({
