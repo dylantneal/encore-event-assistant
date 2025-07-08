@@ -71,12 +71,132 @@ app.use((req, res, next) => {
   next();
 });
 
-// API Routes
+// Override problematic routes with working PostgreSQL versions
+app.get('/api/inventory', async (req, res) => {
+  try {
+    const { property_id, category, status } = req.query;
+    
+    const db = getDatabase();
+    const client = await db.connect();
+    
+    try {
+      let query = 'SELECT * FROM inventory_items';
+      let params = [];
+      let conditions = [];
+      let paramCount = 0;
+      
+      if (property_id) {
+        conditions.push(`property_id = $${++paramCount}`);
+        params.push(parseInt(property_id));
+      }
+      
+      if (category) {
+        conditions.push(`category = $${++paramCount}`);
+        params.push(category);
+      }
+      
+      if (status) {
+        conditions.push(`status = $${++paramCount}`);
+        params.push(status);
+      }
+      
+      if (conditions.length > 0) {
+        query += ' WHERE ' + conditions.join(' AND ');
+      }
+      
+      query += ' ORDER BY category, name';
+      
+      const result = await client.query(query, params);
+      
+      res.json({
+        items: result.rows,
+        total: result.rows.length
+      });
+    } finally {
+      client.release();
+    }
+  } catch (error) {
+    logger.error('Inventory override endpoint error:', error);
+    res.status(500).json({
+      error: 'Internal Server Error',
+      message: 'An error occurred while fetching inventory items'
+    });
+  }
+});
+
+app.get('/api/rooms', async (req, res) => {
+  try {
+    const { property_id } = req.query;
+    
+    const db = getDatabase();
+    const client = await db.connect();
+    
+    try {
+      let query = 'SELECT * FROM rooms';
+      let params = [];
+      
+      if (property_id) {
+        query += ' WHERE property_id = $1';
+        params.push(parseInt(property_id));
+      }
+      
+      query += ' ORDER BY created_at DESC';
+      
+      const result = await client.query(query, params);
+      res.json(result.rows);
+    } finally {
+      client.release();
+    }
+  } catch (error) {
+    logger.error('Rooms override endpoint error:', error);
+    res.status(500).json({
+      error: 'Internal Server Error',
+      message: 'An error occurred while fetching rooms'
+    });
+  }
+});
+
+app.get('/api/unions', async (req, res) => {
+  try {
+    const { property_id } = req.query;
+    
+    if (!property_id) {
+      return res.status(400).json({ 
+        success: false, 
+        message: 'Property ID is required' 
+      });
+    }
+    
+    const db = getDatabase();
+    const client = await db.connect();
+    
+    try {
+      const result = await client.query(`
+        SELECT * FROM unions 
+        WHERE property_id = $1
+        ORDER BY local_number, name
+      `, [property_id]);
+      
+      res.json({
+        success: true,
+        data: result.rows
+      });
+    } finally {
+      client.release();
+    }
+  } catch (error) {
+    logger.error('Unions override endpoint error:', error);
+    res.status(500).json({ 
+      success: false, 
+      message: 'Failed to fetch unions',
+      error: error.message 
+    });
+  }
+});
+
+// API Routes (remaining routes that work fine)
 app.use('/api/properties', propertiesRouter);
-app.use('/api/rooms', roomsRouter);
-app.use('/api/inventory', inventoryRouter);
 app.use('/api/labor-rules', laborRulesRouter);
-app.use('/api/unions', unionsRouter);
 app.use('/api/chat', chatRouter);
 app.use('/api/import', importRouter);
 
@@ -85,7 +205,7 @@ app.get('/api/health', (req, res) => {
   res.json({ 
     status: 'healthy', 
     timestamp: new Date().toISOString(),
-    version: '1.1.5',
+    version: '1.1.6',
     database: usePostgres ? 'PostgreSQL' : 'SQLite',
     corsFixed: true,
     deploymentTime: new Date().toISOString(),
@@ -242,6 +362,8 @@ app.get('/api/rooms-simple', async (req, res) => {
     });
   }
 });
+
+
 
 // Serve frontend for all non-API routes (SPA fallback)
 if (process.env.NODE_ENV === 'production') {
