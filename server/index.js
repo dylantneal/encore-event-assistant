@@ -89,8 +89,32 @@ app.get('/api/health', (req, res) => {
     database: usePostgres ? 'PostgreSQL' : 'SQLite',
     corsFixed: true,
     deploymentTime: new Date().toISOString(),
-    corsConfig: 'external-file'
+    corsConfig: 'external-file',
+    openaiConfigured: !!process.env.OPENAI_API_KEY
   });
+});
+
+// Database repair endpoint
+app.post('/api/repair-database', async (req, res) => {
+  try {
+    logger.info('Starting database repair...');
+    
+    // Re-initialize database
+    await initDatabase();
+    
+    res.json({
+      status: 'success',
+      message: 'Database repaired and re-initialized successfully',
+      timestamp: new Date().toISOString()
+    });
+  } catch (error) {
+    logger.error('Database repair failed:', error);
+    res.status(500).json({
+      status: 'error',
+      message: 'Database repair failed',
+      error: error.message
+    });
+  }
 });
 
 // Serve frontend for all non-API routes (SPA fallback)

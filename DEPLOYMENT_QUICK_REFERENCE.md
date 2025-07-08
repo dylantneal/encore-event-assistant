@@ -1,7 +1,7 @@
 # 🚀 Deployment Quick Reference
 
 ## 🌐 Live URLs
-- **Frontend**: https://encore-architect-frontend-absbibrsl-dylans-projects-1d0f909d.vercel.app
+- **Frontend**: https://encore-architect-frontend-am622lzip-dylans-projects-1d0f909d.vercel.app
 - **Backend**: https://web-production-ff93.up.railway.app
 
 ## 🔧 Quick Commands

@@ -61,13 +61,13 @@ export default function Home() {
       });
       
       if (err.response?.status === 0 || err.code === 'ERR_NETWORK') {
-        setError('Network error: Cannot connect to server. Please check your connection.');
+        setError('Network error: CORS issue detected. The backend deployment is in progress. Please try again in a few minutes.');
       } else if (err.response?.status === 403) {
         setError('Access denied: CORS issue detected. Please try refreshing the page.');
       } else if (err.response?.status >= 500) {
         setError('Server error: The backend service is temporarily unavailable.');
       } else {
-        setError(`Failed to load properties: ${err.message}`);
+        setError(`Failed to load properties: ${err.message}. The backend is being updated - please try again shortly.`);
       }
     } finally {
       setLoading(false);
