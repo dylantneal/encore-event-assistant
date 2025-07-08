@@ -14,19 +14,20 @@ router.get('/', async (req, res) => {
     let query = 'SELECT * FROM inventory_items';
     let params = [];
     let conditions = [];
+    let paramCount = 0;
     
     if (property_id) {
-      conditions.push('property_id = ?');
+      conditions.push(`property_id = $${++paramCount}`);
       params.push(parseInt(property_id));
     }
     
     if (category) {
-      conditions.push('category = ?');
+      conditions.push(`category = $${++paramCount}`);
       params.push(category);
     }
     
     if (status) {
-      conditions.push('status = ?');
+      conditions.push(`status = $${++paramCount}`);
       params.push(status);
     }
     
@@ -36,20 +37,17 @@ router.get('/', async (req, res) => {
     
     query += ' ORDER BY category, name';
     
-    db.all(query, params, (err, items) => {
-      if (err) {
-        logger.error('Error fetching inventory items:', err);
-        return res.status(500).json({
-          error: 'Database Error',
-          message: 'Failed to fetch inventory items'
-        });
-      }
+    const client = await db.connect();
+    try {
+      const result = await client.query(query, params);
       
       res.json({
-        items,
-        total: items.length
+        items: result.rows,
+        total: result.rows.length
       });
-    });
+    } finally {
+      client.release();
+    }
   } catch (error) {
     logger.error('Inventory endpoint error:', error);
     res.status(500).json({

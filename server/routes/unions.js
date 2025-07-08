@@ -53,7 +53,7 @@ const validateUnion = (union) => {
 };
 
 // GET /api/unions - Get all unions for a property
-router.get('/', (req, res) => {
+router.get('/', async (req, res) => {
   try {
     const { property_id } = req.query;
     
@@ -65,28 +65,24 @@ router.get('/', (req, res) => {
     }
     
     const db = getDatabase();
+    const client = await db.connect();
     
-    db.all(`
-      SELECT * FROM unions 
-      WHERE property_id = ?
-      ORDER BY local_number, name
-    `, [property_id], (err, unions) => {
-      if (err) {
-        logger.error('Error fetching unions:', err);
-        return res.status(500).json({ 
-          success: false, 
-          message: 'Failed to fetch unions',
-          error: err.message 
-        });
-      }
+    try {
+      const result = await client.query(`
+        SELECT * FROM unions 
+        WHERE property_id = $1
+        ORDER BY local_number, name
+      `, [property_id]);
       
-      logger.info(`Retrieved ${unions.length} unions for property ${property_id}`);
+      logger.info(`Retrieved ${result.rows.length} unions for property ${property_id}`);
       
       res.json({
         success: true,
-        data: unions
+        data: result.rows
       });
-    });
+    } finally {
+      client.release();
+    }
     
   } catch (error) {
     logger.error('Error fetching unions:', error);
@@ -99,22 +95,16 @@ router.get('/', (req, res) => {
 });
 
 // GET /api/unions/:id - Get specific union
-router.get('/:id', (req, res) => {
+router.get('/:id', async (req, res) => {
   try {
     const { id } = req.params;
     const db = getDatabase();
+    const client = await db.connect();
     
-    db.get('SELECT * FROM unions WHERE id = ?', [id], (err, union) => {
-      if (err) {
-        logger.error('Error fetching union:', err);
-        return res.status(500).json({ 
-          success: false, 
-          message: 'Failed to fetch union',
-          error: err.message 
-        });
-      }
+    try {
+      const result = await client.query('SELECT * FROM unions WHERE id = $1', [id]);
       
-      if (!union) {
+      if (result.rows.length === 0) {
         return res.status(404).json({ 
           success: false, 
           message: 'Union not found' 
@@ -123,9 +113,11 @@ router.get('/:id', (req, res) => {
       
       res.json({
         success: true,
-        data: union
+        data: result.rows[0]
       });
-    });
+    } finally {
+      client.release();
+    }
     
   } catch (error) {
     logger.error('Error fetching union details:', error);
@@ -138,7 +130,7 @@ router.get('/:id', (req, res) => {
 });
 
 // POST /api/unions - Create new union
-router.post('/', (req, res) => {
+router.post('/', async (req, res) => {
   try {
     const union = req.body;
     
@@ -153,49 +145,46 @@ router.post('/', (req, res) => {
     }
     
     const db = getDatabase();
+    const client = await db.connect();
     
-    db.run(`
-      INSERT INTO unions (
-        property_id, local_number, name, trade, 
-        regular_hours_start, regular_hours_end,
-        regular_rate, overtime_rate, doubletime_rate,
-        overtime_threshold, doubletime_threshold,
-        weekend_rules, holiday_rules, contact_info, notes
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `, [
-      union.property_id,
-      union.local_number,
-      union.name,
-      union.trade,
-      union.regular_hours_start || '08:00',
-      union.regular_hours_end || '17:00',
-      union.regular_rate || null,
-      union.overtime_rate || null,
-      union.doubletime_rate || null,
-      union.overtime_threshold || 8,
-      union.doubletime_threshold || 12,
-      union.weekend_rules || '',
-      union.holiday_rules || '',
-      union.contact_info || '',
-      union.notes || ''
-    ], function(err) {
-      if (err) {
-        logger.error('Error creating union:', err);
-        return res.status(500).json({ 
-          success: false, 
-          message: 'Failed to create union',
-          error: err.message 
-        });
-      }
+    try {
+      const result = await client.query(`
+        INSERT INTO unions (
+          property_id, local_number, name, trade, 
+          regular_hours_start, regular_hours_end,
+          regular_rate, overtime_rate, doubletime_rate,
+          overtime_threshold, doubletime_threshold,
+          weekend_rules, holiday_rules, contact_info, notes
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
+        RETURNING id
+      `, [
+        union.property_id,
+        union.local_number,
+        union.name,
+        union.trade,
+        union.regular_hours_start || '08:00',
+        union.regular_hours_end || '17:00',
+        union.regular_rate || null,
+        union.overtime_rate || null,
+        union.doubletime_rate || null,
+        union.overtime_threshold || 8,
+        union.doubletime_threshold || 12,
+        union.weekend_rules || '',
+        union.holiday_rules || '',
+        union.contact_info || '',
+        union.notes || ''
+      ]);
       
       logger.info(`Created union: Local ${union.local_number} - ${union.name}`);
       
       res.status(201).json({
         success: true,
         message: 'Union created successfully',
-        data: { id: this.lastID, ...union }
+        data: { id: result.rows[0].id, ...union }
       });
-    });
+    } finally {
+      client.release();
+    }
     
   } catch (error) {
     logger.error('Error creating union:', error);
@@ -208,7 +197,7 @@ router.post('/', (req, res) => {
 });
 
 // PUT /api/unions/:id - Update union
-router.put('/:id', (req, res) => {
+router.put('/:id', async (req, res) => {
   try {
     const { id } = req.params;
     const union = req.body;
@@ -224,43 +213,37 @@ router.put('/:id', (req, res) => {
     }
     
     const db = getDatabase();
+    const client = await db.connect();
     
-    db.run(`
-      UPDATE unions SET 
-        local_number = ?, name = ?, trade = ?,
-        regular_hours_start = ?, regular_hours_end = ?,
-        regular_rate = ?, overtime_rate = ?, doubletime_rate = ?,
-        overtime_threshold = ?, doubletime_threshold = ?,
-        weekend_rules = ?, holiday_rules = ?, contact_info = ?, notes = ?,
-        updated_at = CURRENT_TIMESTAMP
-      WHERE id = ?
-    `, [
-      union.local_number,
-      union.name,
-      union.trade,
-      union.regular_hours_start || '08:00',
-      union.regular_hours_end || '17:00',
-      union.regular_rate || null,
-      union.overtime_rate || null,
-      union.doubletime_rate || null,
-      union.overtime_threshold || 8,
-      union.doubletime_threshold || 12,
-      union.weekend_rules || '',
-      union.holiday_rules || '',
-      union.contact_info || '',
-      union.notes || '',
-      id
-    ], function(err) {
-      if (err) {
-        logger.error('Error updating union:', err);
-        return res.status(500).json({ 
-          success: false, 
-          message: 'Failed to update union',
-          error: err.message 
-        });
-      }
+    try {
+      const result = await client.query(`
+        UPDATE unions SET 
+          local_number = $1, name = $2, trade = $3,
+          regular_hours_start = $4, regular_hours_end = $5,
+          regular_rate = $6, overtime_rate = $7, doubletime_rate = $8,
+          overtime_threshold = $9, doubletime_threshold = $10,
+          weekend_rules = $11, holiday_rules = $12, contact_info = $13, notes = $14,
+          updated_at = CURRENT_TIMESTAMP
+        WHERE id = $15
+      `, [
+        union.local_number,
+        union.name,
+        union.trade,
+        union.regular_hours_start || '08:00',
+        union.regular_hours_end || '17:00',
+        union.regular_rate || null,
+        union.overtime_rate || null,
+        union.doubletime_rate || null,
+        union.overtime_threshold || 8,
+        union.doubletime_threshold || 12,
+        union.weekend_rules || '',
+        union.holiday_rules || '',
+        union.contact_info || '',
+        union.notes || '',
+        id
+      ]);
       
-      if (this.changes === 0) {
+      if (result.rowCount === 0) {
         return res.status(404).json({ 
           success: false, 
           message: 'Union not found' 
@@ -274,7 +257,9 @@ router.put('/:id', (req, res) => {
         message: 'Union updated successfully',
         data: { id: parseInt(id), ...union }
       });
-    });
+    } finally {
+      client.release();
+    }
     
   } catch (error) {
     logger.error('Error updating union:', error);
@@ -287,22 +272,16 @@ router.put('/:id', (req, res) => {
 });
 
 // DELETE /api/unions/:id - Delete union
-router.delete('/:id', (req, res) => {
+router.delete('/:id', async (req, res) => {
   try {
     const { id } = req.params;
     const db = getDatabase();
+    const client = await db.connect();
     
-    db.run('DELETE FROM unions WHERE id = ?', [id], function(err) {
-      if (err) {
-        logger.error('Error deleting union:', err);
-        return res.status(500).json({ 
-          success: false, 
-          message: 'Failed to delete union',
-          error: err.message 
-        });
-      }
+    try {
+      const result = await client.query('DELETE FROM unions WHERE id = $1', [id]);
       
-      if (this.changes === 0) {
+      if (result.rowCount === 0) {
         return res.status(404).json({ 
           success: false, 
           message: 'Union not found' 
@@ -315,7 +294,9 @@ router.delete('/:id', (req, res) => {
         success: true,
         message: 'Union deleted successfully'
       });
-    });
+    } finally {
+      client.release();
+    }
     
   } catch (error) {
     logger.error('Error deleting union:', error);
@@ -328,33 +309,39 @@ router.delete('/:id', (req, res) => {
 });
 
 // POST /api/unions/:id/schedules - Add schedule rule
-router.post('/:id/schedules', (req, res) => {
+router.post('/:id/schedules', async (req, res) => {
   try {
     const { id } = req.params;
     const schedule = req.body;
     
-    const stmt = db.prepare(`
-      INSERT INTO union_schedules (
-        union_id, day_of_week, start_time, end_time, 
-        rate_type, rate_multiplier, description
-      ) VALUES (?, ?, ?, ?, ?, ?, ?)
-    `);
+    const db = getDatabase();
+    const client = await db.connect();
     
-    const result = stmt.run(
-      id,
-      schedule.day_of_week,
-      schedule.start_time,
-      schedule.end_time,
-      schedule.rate_type,
-      schedule.rate_multiplier,
-      schedule.description || ''
-    );
-    
-    res.status(201).json({
-      success: true,
-      message: 'Schedule rule added successfully',
-      data: { id: result.lastInsertRowid, ...schedule }
-    });
+    try {
+      const result = await client.query(`
+        INSERT INTO union_schedules (
+          union_id, day_of_week, start_time, end_time, 
+          rate_type, rate_multiplier, description
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7)
+        RETURNING id
+      `, [
+        id,
+        schedule.day_of_week,
+        schedule.start_time,
+        schedule.end_time,
+        schedule.rate_type,
+        schedule.rate_multiplier,
+        schedule.description || ''
+      ]);
+      
+      res.status(201).json({
+        success: true,
+        message: 'Schedule rule added successfully',
+        data: { id: result.rows[0].id, ...schedule }
+      });
+    } finally {
+      client.release();
+    }
     
   } catch (error) {
     logger.error('Error adding schedule rule:', error);
@@ -367,32 +354,38 @@ router.post('/:id/schedules', (req, res) => {
 });
 
 // POST /api/unions/:id/equipment - Add equipment requirement
-router.post('/:id/equipment', (req, res) => {
+router.post('/:id/equipment', async (req, res) => {
   try {
     const { id } = req.params;
     const equipment = req.body;
     
-    const stmt = db.prepare(`
-      INSERT INTO union_equipment_requirements (
-        union_id, equipment_category, equipment_type, 
-        is_required, minimum_crew_size, notes
-      ) VALUES (?, ?, ?, ?, ?, ?)
-    `);
+    const db = getDatabase();
+    const client = await db.connect();
     
-    const result = stmt.run(
-      id,
-      equipment.equipment_category,
-      equipment.equipment_type,
-      equipment.is_required ? 1 : 0,
-      equipment.minimum_crew_size || 1,
-      equipment.notes || ''
-    );
-    
-    res.status(201).json({
-      success: true,
-      message: 'Equipment requirement added successfully',
-      data: { id: result.lastInsertRowid, ...equipment }
-    });
+    try {
+      const result = await client.query(`
+        INSERT INTO union_equipment_requirements (
+          union_id, equipment_category, equipment_type, 
+          is_required, minimum_crew_size, notes
+        ) VALUES ($1, $2, $3, $4, $5, $6)
+        RETURNING id
+      `, [
+        id,
+        equipment.equipment_category,
+        equipment.equipment_type,
+        equipment.is_required ? true : false,
+        equipment.minimum_crew_size || 1,
+        equipment.notes || ''
+      ]);
+      
+      res.status(201).json({
+        success: true,
+        message: 'Equipment requirement added successfully',
+        data: { id: result.rows[0].id, ...equipment }
+      });
+    } finally {
+      client.release();
+    }
     
   } catch (error) {
     logger.error('Error adding equipment requirement:', error);
@@ -405,34 +398,40 @@ router.post('/:id/equipment', (req, res) => {
 });
 
 // POST /api/unions/:id/venue-rules - Add venue-specific rule
-router.post('/:id/venue-rules', (req, res) => {
+router.post('/:id/venue-rules', async (req, res) => {
   try {
     const { id } = req.params;
     const rule = req.body;
     
-    const stmt = db.prepare(`
-      INSERT INTO union_venue_rules (
-        union_id, room_id, rule_type, condition_text,
-        threshold_value, threshold_unit, action_required, notes
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-    `);
+    const db = getDatabase();
+    const client = await db.connect();
     
-    const result = stmt.run(
-      id,
-      rule.room_id || null,
-      rule.rule_type,
-      rule.condition_text,
-      rule.threshold_value || null,
-      rule.threshold_unit || null,
-      rule.action_required || '',
-      rule.notes || ''
-    );
-    
-    res.status(201).json({
-      success: true,
-      message: 'Venue rule added successfully',
-      data: { id: result.lastInsertRowid, ...rule }
-    });
+    try {
+      const result = await client.query(`
+        INSERT INTO union_venue_rules (
+          union_id, room_id, rule_type, condition_text,
+          threshold_value, threshold_unit, action_required, notes
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+        RETURNING id
+      `, [
+        id,
+        rule.room_id || null,
+        rule.rule_type,
+        rule.condition_text,
+        rule.threshold_value || null,
+        rule.threshold_unit || null,
+        rule.action_required || '',
+        rule.notes || ''
+      ]);
+      
+      res.status(201).json({
+        success: true,
+        message: 'Venue rule added successfully',
+        data: { id: result.rows[0].id, ...rule }
+      });
+    } finally {
+      client.release();
+    }
     
   } catch (error) {
     logger.error('Error adding venue rule:', error);
@@ -445,66 +444,73 @@ router.post('/:id/venue-rules', (req, res) => {
 });
 
 // GET /api/unions/for-ai/:property_id - Get union info formatted for AI
-router.get('/for-ai/:property_id', (req, res) => {
+router.get('/for-ai/:property_id', async (req, res) => {
   try {
     const { property_id } = req.params;
     
-    // Get all unions with their complex rules for AI processing
-    const stmt = db.prepare(`
-      SELECT 
-        u.*,
-        GROUP_CONCAT(DISTINCT 
-          CASE WHEN us.day_of_week IS NOT NULL 
-          THEN 'Day ' || us.day_of_week || ': ' || us.start_time || '-' || us.end_time || ' (' || us.rate_type || ' ' || us.rate_multiplier || 'x)'
-          END
-        ) as schedule_rules,
-        GROUP_CONCAT(DISTINCT 
-          CASE WHEN uer.equipment_category IS NOT NULL 
-          THEN uer.equipment_category || '/' || uer.equipment_type || ' (crew: ' || uer.minimum_crew_size || ')'
-          END
-        ) as equipment_rules,
-        GROUP_CONCAT(DISTINCT 
-          CASE WHEN uvr.condition_text IS NOT NULL 
-          THEN uvr.condition_text || ' -> ' || uvr.action_required
-          END
-        ) as venue_rules
-      FROM unions u
-      LEFT JOIN union_schedules us ON u.id = us.union_id
-      LEFT JOIN union_equipment_requirements uer ON u.id = uer.union_id
-      LEFT JOIN union_venue_rules uvr ON u.id = uvr.union_id
-      WHERE u.property_id = ?
-      GROUP BY u.id
-      ORDER BY u.local_number, u.name
-    `);
+    const db = getDatabase();
+    const client = await db.connect();
     
-    const unions = stmt.all(property_id);
-    
-    // Format for AI consumption
-    const aiFormattedUnions = unions.map(union => ({
-      id: union.id,
-      local_number: union.local_number,
-      name: union.name,
-      trade: union.trade,
-      basic_info: {
-        regular_hours: `${union.regular_hours_start} - ${union.regular_hours_end}`,
-        regular_rate: union.regular_rate ? `$${union.regular_rate}/hour` : 'Not specified',
-        overtime_rate: union.overtime_rate ? `$${union.overtime_rate}/hour (after ${union.overtime_threshold} hours)` : 'Not specified',
-        doubletime_rate: union.doubletime_rate ? `$${union.doubletime_rate}/hour (after ${union.doubletime_threshold} hours)` : 'Not specified'
-      },
-      weekend_rules: union.weekend_rules || 'Not specified',
-      holiday_rules: union.holiday_rules || 'Not specified',
-      schedule_rules: union.schedule_rules || 'Standard schedule only',
-      equipment_rules: union.equipment_rules || 'No specific equipment requirements',
-      venue_rules: union.venue_rules || 'No venue-specific rules',
-      contact_info: union.contact_info || 'Not provided',
-      notes: union.notes || 'No additional notes'
-    }));
-    
-    res.json({
-      success: true,
-      data: aiFormattedUnions,
-      summary: `${unions.length} unions configured for this property with detailed labor rules and requirements.`
-    });
+    try {
+      // Get all unions with their complex rules for AI processing
+      const result = await client.query(`
+        SELECT 
+          u.*,
+          STRING_AGG(DISTINCT 
+            CASE WHEN us.day_of_week IS NOT NULL 
+            THEN 'Day ' || us.day_of_week || ': ' || us.start_time || '-' || us.end_time || ' (' || us.rate_type || ' ' || us.rate_multiplier || 'x)'
+            END, ', '
+          ) as schedule_rules,
+          STRING_AGG(DISTINCT 
+            CASE WHEN uer.equipment_category IS NOT NULL 
+            THEN uer.equipment_category || '/' || uer.equipment_type || ' (crew: ' || uer.minimum_crew_size || ')'
+            END, ', '
+          ) as equipment_rules,
+          STRING_AGG(DISTINCT 
+            CASE WHEN uvr.condition_text IS NOT NULL 
+            THEN uvr.condition_text || ' -> ' || uvr.action_required
+            END, ', '
+          ) as venue_rules
+        FROM unions u
+        LEFT JOIN union_schedules us ON u.id = us.union_id
+        LEFT JOIN union_equipment_requirements uer ON u.id = uer.union_id
+        LEFT JOIN union_venue_rules uvr ON u.id = uvr.union_id
+        WHERE u.property_id = $1
+        GROUP BY u.id
+        ORDER BY u.local_number, u.name
+      `, [property_id]);
+      
+      const unions = result.rows;
+      
+      // Format for AI consumption
+      const aiFormattedUnions = unions.map(union => ({
+        id: union.id,
+        local_number: union.local_number,
+        name: union.name,
+        trade: union.trade,
+        basic_info: {
+          regular_hours: `${union.regular_hours_start} - ${union.regular_hours_end}`,
+          regular_rate: union.regular_rate ? `$${union.regular_rate}/hour` : 'Not specified',
+          overtime_rate: union.overtime_rate ? `$${union.overtime_rate}/hour (after ${union.overtime_threshold} hours)` : 'Not specified',
+          doubletime_rate: union.doubletime_rate ? `$${union.doubletime_rate}/hour (after ${union.doubletime_threshold} hours)` : 'Not specified'
+        },
+        weekend_rules: union.weekend_rules || 'Not specified',
+        holiday_rules: union.holiday_rules || 'Not specified',
+        schedule_rules: union.schedule_rules || 'Standard schedule only',
+        equipment_rules: union.equipment_rules || 'No specific equipment requirements',
+        venue_rules: union.venue_rules || 'No venue-specific rules',
+        contact_info: union.contact_info || 'Not provided',
+        notes: union.notes || 'No additional notes'
+      }));
+      
+      res.json({
+        success: true,
+        data: aiFormattedUnions,
+        summary: `${unions.length} unions configured for this property with detailed labor rules and requirements.`
+      });
+    } finally {
+      client.release();
+    }
     
   } catch (error) {
     logger.error('Error fetching unions for AI:', error);
