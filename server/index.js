@@ -53,9 +53,12 @@ if (process.env.NODE_ENV === 'production') {
   const clientBuildPath = path.join(__dirname, '..', 'client', '.next');
   const clientPublicPath = path.join(__dirname, '..', 'client', 'public');
   
-  // Serve static assets
+  // Serve Next.js static assets
   app.use('/_next', express.static(path.join(clientBuildPath, 'static')));
   app.use('/public', express.static(clientPublicPath));
+  
+  // Serve favicon and other static files
+  app.use('/favicon.ico', express.static(path.join(clientPublicPath, 'favicon.ico')));
 }
 
 // Logging middleware
@@ -89,51 +92,60 @@ app.get('/api/health', (req, res) => {
 
 // Serve frontend for all non-API routes (SPA fallback)
 if (process.env.NODE_ENV === 'production') {
+  const fs = require('fs');
+  const clientBuildPath = path.join(__dirname, '..', 'client', '.next');
+  const indexPath = path.join(clientBuildPath, 'server', 'pages', 'index.html');
+  
   app.get('*', (req, res) => {
-    // For now, serve a simple HTML page since Next.js build isn't set up
-    res.send(`
-      <!DOCTYPE html>
-      <html>
-        <head>
-          <title>Encore Architect</title>
-          <style>
-            body { 
-              font-family: Arial, sans-serif; 
-              background: #0a0a0f; 
-              color: white; 
-              padding: 40px; 
-              text-align: center;
-            }
-            .container { max-width: 600px; margin: 0 auto; }
-            .logo { font-size: 3em; margin-bottom: 20px; background: linear-gradient(45deg, #4965ff, #06b6d4); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
-            .status { background: #1a1a2e; padding: 20px; border-radius: 10px; margin: 20px 0; }
-            .api-link { color: #06b6d4; text-decoration: none; }
-            .api-link:hover { text-decoration: underline; }
-          </style>
-        </head>
-        <body>
-          <div class="container">
-            <h1 class="logo">🏗️ Encore Architect</h1>
-            <div class="status">
-              <h2>✅ Backend Successfully Deployed!</h2>
-              <p>Your Encore Architect backend is running on Railway.</p>
-              <p><strong>Database:</strong> ${usePostgres ? 'PostgreSQL' : 'SQLite'}</p>
-              <p><strong>API Status:</strong> <span style="color: #10b981;">Online</span></p>
+    // Try to serve the Next.js built pages
+    if (fs.existsSync(indexPath)) {
+      res.sendFile(indexPath);
+    } else {
+      // Fallback to a simple status page if Next.js build isn't available
+      res.send(`
+        <!DOCTYPE html>
+        <html>
+          <head>
+            <title>Encore Architect</title>
+            <style>
+              body { 
+                font-family: Arial, sans-serif; 
+                background: #0a0a0f; 
+                color: white; 
+                padding: 40px; 
+                text-align: center;
+              }
+              .container { max-width: 600px; margin: 0 auto; }
+              .logo { font-size: 3em; margin-bottom: 20px; background: linear-gradient(45deg, #4965ff, #06b6d4); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+              .status { background: #1a1a2e; padding: 20px; border-radius: 10px; margin: 20px 0; }
+              .api-link { color: #06b6d4; text-decoration: none; }
+              .api-link:hover { text-decoration: underline; }
+            </style>
+          </head>
+          <body>
+            <div class="container">
+              <h1 class="logo">🏗️ Encore Architect</h1>
+              <div class="status">
+                <h2>✅ Backend Successfully Deployed!</h2>
+                <p>Your Encore Architect backend is running on Railway.</p>
+                <p><strong>Database:</strong> ${usePostgres ? 'PostgreSQL' : 'SQLite'}</p>
+                <p><strong>API Status:</strong> <span style="color: #10b981;">Online</span></p>
+              </div>
+              <div class="status">
+                <h3>🔗 API Endpoints</h3>
+                <p><a href="/api/health" class="api-link">Health Check</a></p>
+                <p><a href="/api/properties" class="api-link">Properties API</a></p>
+              </div>
+              <div class="status">
+                <h3>📝 Next Steps</h3>
+                <p>Building frontend - please wait...</p>
+                <p>Frontend will be available shortly</p>
+              </div>
             </div>
-            <div class="status">
-              <h3>🔗 API Endpoints</h3>
-              <p><a href="/api/health" class="api-link">Health Check</a></p>
-              <p><a href="/api/properties" class="api-link">Properties API</a></p>
-            </div>
-            <div class="status">
-              <h3>📝 Next Steps</h3>
-              <p>Add PostgreSQL database to enable full functionality</p>
-              <p>Deploy frontend for complete user interface</p>
-            </div>
-          </div>
-        </body>
-      </html>
-    `);
+          </body>
+        </html>
+      `);
+    }
   });
 }
 
