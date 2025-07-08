@@ -45,12 +45,30 @@ export default function Home() {
   const loadProperties = async () => {
     try {
       setLoading(true);
+      console.log('Loading properties from:', `${process.env.NEXT_PUBLIC_API_URL || 'https://web-production-ff93.up.railway.app'}/api/properties`);
       const response = await api.get('/properties');
+      console.log('Properties loaded:', response.data.length);
       setProperties(response.data);
       setFilteredProperties(response.data);
-    } catch (err) {
-      setError('Failed to load properties');
+      setError(null); // Clear any previous errors
+    } catch (err: any) {
       console.error('Error loading properties:', err);
+      console.error('Error details:', {
+        message: err.message,
+        status: err.response?.status,
+        statusText: err.response?.statusText,
+        data: err.response?.data
+      });
+      
+      if (err.response?.status === 0 || err.code === 'ERR_NETWORK') {
+        setError('Network error: Cannot connect to server. Please check your connection.');
+      } else if (err.response?.status === 403) {
+        setError('Access denied: CORS issue detected. Please try refreshing the page.');
+      } else if (err.response?.status >= 500) {
+        setError('Server error: The backend service is temporarily unavailable.');
+      } else {
+        setError(`Failed to load properties: ${err.message}`);
+      }
     } finally {
       setLoading(false);
     }

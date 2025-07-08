@@ -87,9 +87,10 @@ app.get('/api/health', (req, res) => {
   res.json({ 
     status: 'healthy', 
     timestamp: new Date().toISOString(),
-    version: '1.0.1',
+    version: '1.0.2',
     database: usePostgres ? 'PostgreSQL' : 'SQLite',
-    corsFixed: true
+    corsFixed: true,
+    deploymentTime: new Date().toISOString()
   });
 });
 

@@ -63,3 +63,7 @@ temp/
 # Local development
 .cache/
 *.local 
+.vercel
+
+# Local Netlify folder
+.netlify
