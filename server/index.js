@@ -31,8 +31,26 @@ if (process.env.NODE_ENV === 'production') {
 
 // Security middleware
 app.use(helmet());
+
+// CORS configuration with multiple allowed origins
+const allowedOrigins = [
+  'http://localhost:3000',
+  'https://encore-architect-frontend-hwt1dgokc-dylans-projects-1d0f909d.vercel.app',
+  'https://encore-architect-frontend.vercel.app',
+  process.env.CLIENT_URL
+].filter(Boolean);
+
 app.use(cors({
-  origin: process.env.CLIENT_URL || 'http://localhost:3000',
+  origin: function (origin, callback) {
+    // Allow requests with no origin (like mobile apps, curl requests)
+    if (!origin) return callback(null, true);
+    
+    if (allowedOrigins.some(allowedOrigin => origin.includes(allowedOrigin.replace('https://', '').replace('http://', '')))) {
+      return callback(null, true);
+    }
+    
+    callback(new Error('Not allowed by CORS'));
+  },
   credentials: true
 }));
 
