@@ -3,7 +3,7 @@ import Head from 'next/head';
 import Link from 'next/link';
 import { useProperty } from '../contexts/PropertyContext';
 import { chatAPI } from '../utils/api';
-import { ArrowLeft, Send, RotateCcw, User, Bot, Sparkles, Zap } from 'lucide-react';
+import { ArrowLeft, Send, RotateCcw, User, Bot, Sparkles, Zap, Paperclip, X, FileText, Image as ImageIcon, Compass } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import toast from 'react-hot-toast';
 
@@ -11,6 +11,11 @@ interface Message {
   role: 'user' | 'assistant';
   content: string;
   timestamp: Date;
+  file?: {
+    name: string;
+    type: string;
+    size: number;
+  };
 }
 
 export default function Chat() {
@@ -18,7 +23,10 @@ export default function Chat() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [filePreview, setFilePreview] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -66,17 +74,63 @@ export default function Chat() {
     }
   }, [selectedProperty]);
 
+  const handleFileSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    // Validate file type
+    const allowedTypes = ['image/jpeg', 'image/png', 'image/gif', 'application/pdf'];
+    if (!allowedTypes.includes(file.type)) {
+      toast.error('Please upload an image (JPEG, PNG, GIF) or PDF file');
+      return;
+    }
+
+    // Validate file size (10MB limit)
+    if (file.size > 10 * 1024 * 1024) {
+      toast.error('File size must be less than 10MB');
+      return;
+    }
+
+    setSelectedFile(file);
+
+    // Create preview for images
+    if (file.type.startsWith('image/')) {
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        setFilePreview(e.target?.result as string);
+      };
+      reader.readAsDataURL(file);
+    } else {
+      setFilePreview(null);
+    }
+  };
+
+  const removeSelectedFile = () => {
+    setSelectedFile(null);
+    setFilePreview(null);
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+    }
+  };
+
   const sendMessage = async () => {
-    if (!input.trim() || !selectedProperty || isLoading) return;
+    if ((!input.trim() && !selectedFile) || !selectedProperty || isLoading) return;
 
     const userMessage: Message = {
       role: 'user',
       content: input.trim(),
       timestamp: new Date(),
+      file: selectedFile ? {
+        name: selectedFile.name,
+        type: selectedFile.type,
+        size: selectedFile.size
+      } : undefined
     };
 
     setMessages(prev => [...prev, userMessage]);
     setInput('');
+    const fileToSend = selectedFile; // Store file reference
+    removeSelectedFile(); // Clear file selection
     setIsLoading(true);
 
     try {
@@ -85,7 +139,20 @@ export default function Chat() {
         content: msg.content,
       }));
 
-      const response = await chatAPI.sendMessage(chatMessages, selectedProperty.id);
+      let response;
+      
+      if (fileToSend) {
+        // Send with file using FormData
+        const formData = new FormData();
+        formData.append('messages', JSON.stringify(chatMessages));
+        formData.append('propertyId', selectedProperty.id.toString());
+        formData.append('file', fileToSend);
+        
+        response = await chatAPI.sendMessageWithFile(formData);
+      } else {
+        // Regular text message
+        response = await chatAPI.sendMessage(chatMessages, selectedProperty.id);
+      }
       
       const assistantMessage: Message = {
         role: 'assistant',
@@ -158,7 +225,7 @@ export default function Chat() {
   return (
     <>
       <Head>
-        <title>AI Assistant - Encore FlightDeck</title>
+        <title>AI Assistant - Encore Architect</title>
         <meta name="description" content="Chat with AI assistant for event planning" />
       </Head>
 
@@ -175,7 +242,7 @@ export default function Chat() {
               </Link>
               <div>
                 <h1 className="text-xl font-semibold text-white flex items-center">
-                  <Sparkles className="w-5 h-5 mr-2 text-primary-400" />
+                  <Compass className="w-5 h-5 mr-2 text-primary-400" />
                   AI Assistant
                 </h1>
                 <p className="text-sm text-gray-400">{selectedProperty.name}</p>
@@ -260,7 +327,19 @@ export default function Chat() {
                           <ReactMarkdown>{message.content}</ReactMarkdown>
                         </div>
                       ) : (
-                        <p className="text-white">{message.content}</p>
+                        <>
+                          {message.file && (
+                            <div className="mb-2 p-2 bg-white/5 rounded inline-flex items-center">
+                              {message.file.type.startsWith('image/') ? (
+                                <ImageIcon className="w-4 h-4 text-primary-400 mr-2" />
+                              ) : (
+                                <FileText className="w-4 h-4 text-primary-400 mr-2" />
+                              )}
+                              <span className="text-sm text-gray-300">{message.file.name}</span>
+                            </div>
+                          )}
+                          <p className="text-white">{message.content || 'Analyzing file...'}</p>
+                        </>
                       )}
                       <div className={`text-xs mt-3 ${
                         message.role === 'user' ? 'text-primary-200' : 'text-gray-500'
@@ -299,25 +378,79 @@ export default function Chat() {
         {/* Input */}
         <div className="glass-card-dark border-t border-white/10 px-4 py-6 relative z-10">
           <div className="max-w-4xl mx-auto">
+            {/* File Preview */}
+            {selectedFile && (
+              <div className="mb-4 p-3 glass-card-dark border border-white/10 rounded-lg flex items-center justify-between animate-slide-up">
+                <div className="flex items-center">
+                  {selectedFile.type.startsWith('image/') ? (
+                    <>
+                      {filePreview && (
+                        <img 
+                          src={filePreview} 
+                          alt="Preview" 
+                          className="w-16 h-16 object-cover rounded mr-3"
+                        />
+                      )}
+                      <ImageIcon className="w-5 h-5 text-primary-400 mr-2" />
+                    </>
+                  ) : (
+                    <FileText className="w-5 h-5 text-primary-400 mr-2" />
+                  )}
+                  <div>
+                    <p className="text-sm text-white font-medium">{selectedFile.name}</p>
+                    <p className="text-xs text-gray-400">
+                      {(selectedFile.size / 1024).toFixed(1)} KB
+                    </p>
+                  </div>
+                </div>
+                <button
+                  onClick={removeSelectedFile}
+                  className="icon-btn hover:bg-red-500/20"
+                >
+                  <X className="w-4 h-4 text-red-400" />
+                </button>
+              </div>
+            )}
+
             <div className="flex space-x-4">
-              <textarea
-                value={input}
-                onChange={(e) => setInput(e.target.value)}
-                onKeyPress={handleKeyPress}
-                placeholder="Describe your event requirements..."
-                className="flex-1 input-field resize-none min-h-[80px]"
-                disabled={isLoading}
-              />
+              <div className="flex-1 relative">
+                <textarea
+                  value={input}
+                  onChange={(e) => setInput(e.target.value)}
+                  onKeyPress={handleKeyPress}
+                  placeholder={selectedFile ? "Add a message about this file..." : "Describe your event requirements..."}
+                  className="w-full input-field resize-none min-h-[80px] pr-12"
+                  disabled={isLoading}
+                />
+                {/* File Upload Button */}
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept="image/jpeg,image/png,image/gif,application/pdf"
+                  onChange={handleFileSelect}
+                  className="hidden"
+                />
+                <button
+                  onClick={() => fileInputRef.current?.click()}
+                  className="absolute bottom-3 right-3 icon-btn group"
+                  disabled={isLoading}
+                  title="Attach image or PDF"
+                >
+                  <Paperclip className="w-5 h-5 text-gray-400 group-hover:text-white transition-colors" />
+                </button>
+              </div>
               <button
                 onClick={sendMessage}
-                disabled={!input.trim() || isLoading}
+                disabled={(!input.trim() && !selectedFile) || isLoading}
                 className="btn-accent px-6 self-end group"
               >
                 <Send className="w-5 h-5 group-hover:translate-x-1 group-hover:-translate-y-1 transition-transform" />
               </button>
             </div>
             <div className="mt-3 flex items-center justify-between text-xs text-gray-500">
-              <span>Press Enter to send, Shift+Enter for new line</span>
+              <span>
+                Press Enter to send, Shift+Enter for new line • Upload images or PDFs to analyze AV setups
+              </span>
               <span className="flex items-center">
                 <div className="w-2 h-2 rounded-full bg-green-400 mr-2 animate-pulse"></div>
                 AI Assistant ready

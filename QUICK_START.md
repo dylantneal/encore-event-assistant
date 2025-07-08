@@ -1,4 +1,4 @@
-# 🚀 Quick Start Guide - Encore Event Order Assistant
+# 🚀 Quick Start Guide - Encore Architect
 
 ## ✅ Prerequisites
 - Node.js 18+ installed

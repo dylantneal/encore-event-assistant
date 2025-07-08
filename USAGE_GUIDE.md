@@ -1,8 +1,8 @@
-# Encore Event Order Assistant - Usage Guide
+# Encore Architect - Usage Guide
 
 ## ✅ System Status: FULLY OPERATIONAL & UPLOAD FIXED
 
-The Encore Event Order Assistant is now **complete and fully functional** with all issues resolved, including **Smart Excel Import** with flexible column mapping.
+The Encore Architect is now **complete and fully functional** with all issues resolved, including **Smart Excel Import** with flexible column mapping.
 
 ## 🚀 System Ready
 

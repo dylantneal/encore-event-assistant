@@ -2,7 +2,7 @@
 
 ## Overview
 
-Successfully implemented 4-digit property codes for the Encore Event Order Assistant, enabling easy property identification and lookup. All 61 Chicago properties from your list have been added to the system.
+Successfully implemented 4-digit property codes for the Encore Architect, enabling easy property identification and lookup. All 61 Chicago properties from your list have been added to the system.
 
 ## Property Code System
 
@@ -238,6 +238,6 @@ GET /api/properties
 
 ## Conclusion
 
-The property code system successfully transforms the Encore Event Order Assistant from a single-property demo to a multi-property platform ready for real-world deployment. With 61 Chicago properties now available, the system demonstrates scalability while maintaining the intuitive, AI-powered event planning capabilities.
+The property code system successfully transforms the Encore Architect from a single-property demo to a multi-property platform ready for real-world deployment. With 61 Chicago properties now available, the system demonstrates scalability while maintaining the intuitive, AI-powered event planning capabilities.
 
 The 4-digit code system provides the perfect balance of simplicity and functionality, making it easy for sales staff to quickly reference properties while maintaining the system's sophisticated AI capabilities. 

@@ -6,7 +6,12 @@ const bodyParser = require('body-parser');
 const path = require('path');
 require('dotenv').config();
 
-const { initDatabase } = require('./database/init');
+// Auto-detect database type based on environment
+const usePostgres = !!process.env.DATABASE_URL;
+const { initDatabase } = usePostgres 
+  ? require('./database/postgres-init') 
+  : require('./database/init');
+
 const { logger } = require('./utils/logger');
 const propertiesRouter = require('./routes/properties');
 const roomsRouter = require('./routes/rooms');
@@ -62,7 +67,8 @@ app.get('/api/health', (req, res) => {
   res.json({ 
     status: 'healthy', 
     timestamp: new Date().toISOString(),
-    version: '1.0.0'
+    version: '1.0.0',
+    database: usePostgres ? 'PostgreSQL' : 'SQLite'
   });
 });
 
@@ -103,11 +109,12 @@ app.use((req, res) => {
 async function startServer() {
   try {
     await initDatabase();
-    logger.info('Database initialized successfully');
+    logger.info(`Database initialized successfully (${usePostgres ? 'PostgreSQL' : 'SQLite'})`);
     
     app.listen(PORT, () => {
       logger.info(`Server is running on port ${PORT}`);
       logger.info(`Health check: http://localhost:${PORT}/api/health`);
+      logger.info(`Database type: ${usePostgres ? 'PostgreSQL' : 'SQLite'}`);
     });
   } catch (error) {
     logger.error('Failed to start server:', error);

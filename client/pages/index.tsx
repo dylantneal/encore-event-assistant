@@ -3,7 +3,7 @@ import Head from 'next/head';
 import { useRouter } from 'next/router';
 import { useProperty } from '../contexts/PropertyContext';
 import { api } from '../utils/api';
-import { Building2, MessageSquare, Settings, Search, MapPin, Sparkles, Zap, Shield, AlertTriangle } from 'lucide-react';
+import { Building2, MessageSquare, Settings, Search, MapPin, Sparkles, Zap, Shield, AlertTriangle, Compass, Layers } from 'lucide-react';
 
 interface Property {
   id: number;
@@ -98,47 +98,58 @@ export default function Home() {
   return (
     <>
       <Head>
-        <title>Encore FlightDeck</title>
+        <title>Encore Architect</title>
         <meta name="description" content="AI-powered event planning and management for Encore venues" />
         <meta name="viewport" content="width=device-width, initial-scale=1" />
         <link rel="icon" href="/favicon.ico" />
       </Head>
 
       <div className="min-h-screen bg-space-900 relative overflow-hidden">
-        {/* Background effects */}
+        {/* Enhanced background effects */}
         <div className="absolute inset-0 bg-mesh-gradient opacity-20 animate-gradient"></div>
         <div className="absolute top-0 left-0 w-96 h-96 bg-primary-500/20 rounded-full blur-3xl animate-float"></div>
         <div className="absolute bottom-0 right-0 w-96 h-96 bg-accent-500/20 rounded-full blur-3xl animate-float" style={{ animationDelay: '2s' }}></div>
+        <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-full h-full opacity-5">
+          <div className="absolute inset-0 bg-gradient-to-br from-primary-600/10 via-transparent to-accent-600/10"></div>
+        </div>
         
         <div className="container mx-auto px-4 py-12 relative z-10">
-          {/* Header */}
+          {/* Enhanced Header */}
           <div className="text-center mb-12 animate-fade-in">
-            <div className="flex justify-center mb-6">
-              <div className="p-4 rounded-2xl bg-gradient-to-br from-primary-500/20 to-accent-500/20 backdrop-blur-sm border border-white/10 animate-pulse-glow">
-                <Sparkles className="w-12 h-12 text-primary-400" />
+            <div className="flex justify-center mb-8">
+              <div className="relative p-6 rounded-3xl bg-gradient-to-br from-primary-500/20 to-accent-500/20 backdrop-blur-sm border border-white/10 animate-pulse-glow">
+                <div className="absolute inset-0 rounded-3xl bg-gradient-to-br from-primary-400/10 to-accent-400/10 animate-pulse"></div>
+                <div className="relative flex items-center justify-center">
+                  <Compass className="w-16 h-16 text-primary-400" />
+                  <div className="absolute inset-0 rounded-full bg-primary-400/20 blur-xl animate-ping"></div>
+                </div>
               </div>
             </div>
-            <h1 className="text-5xl md:text-6xl font-display font-bold mb-6">
-              <span className="gradient-text">Encore</span>{' '}
-              <span className="gradient-text">FlightDeck</span>
+            <h1 className="text-6xl md:text-7xl font-display font-bold mb-6 relative">
+              <span className="gradient-text relative z-10">Encore</span>{' '}
+              <span className="gradient-text relative z-10 bg-gradient-to-r from-accent-400 via-primary-400 to-electric-500 bg-clip-text">Architect</span>
+              <div className="absolute inset-0 blur-3xl opacity-30 bg-gradient-to-r from-primary-600 to-accent-600 animate-pulse"></div>
             </h1>
-            <p className="text-xl text-gray-300 max-w-3xl mx-auto leading-relaxed">
+            <p className="text-xl md:text-2xl text-gray-300 max-w-4xl mx-auto leading-relaxed font-medium">
               AI-powered event planning and management for your venue's inventory, labor, and requirements.
             </p>
+            <p className="text-lg text-gray-400 max-w-2xl mx-auto mt-4 leading-relaxed">
+              Design exceptional events with intelligent automation and precision planning.
+            </p>
 
-            {/* Feature badges */}
-            <div className="flex flex-wrap justify-center gap-4 mt-8">
-              <div className="badge-info flex items-center">
-                <Zap className="w-4 h-4 mr-2" />
-                Real-time AI
+            {/* Enhanced Feature badges */}
+            <div className="flex flex-wrap justify-center gap-6 mt-10">
+              <div className="badge-info flex items-center bg-gradient-to-r from-primary-500/20 to-primary-600/20 backdrop-blur-sm border border-primary-400/30 px-6 py-3 rounded-full">
+                <Zap className="w-5 h-5 mr-3 text-primary-400" />
+                <span className="font-medium">Real-time AI</span>
               </div>
-              <div className="badge-info flex items-center">
-                <Shield className="w-4 h-4 mr-2" />
-                Property-Specific
+              <div className="badge-info flex items-center bg-gradient-to-r from-accent-500/20 to-accent-600/20 backdrop-blur-sm border border-accent-400/30 px-6 py-3 rounded-full">
+                <Shield className="w-5 h-5 mr-3 text-accent-400" />
+                <span className="font-medium">Property-Specific</span>
               </div>
-              <div className="badge-info flex items-center">
-                <Sparkles className="w-4 h-4 mr-2" />
-                Smart Proposals
+              <div className="badge-info flex items-center bg-gradient-to-r from-electric-500/20 to-electric-600/20 backdrop-blur-sm border border-electric-400/30 px-6 py-3 rounded-full">
+                <Sparkles className="w-5 h-5 mr-3 text-electric-400" />
+                <span className="font-medium">Smart Proposals</span>
               </div>
             </div>
           </div>

@@ -1,7 +1,7 @@
 {
-  "name": "encore-event-order-assistant",
+  "name": "encore-architect",
   "version": "1.0.0",
-  "description": "AI-powered event order assistant for Encore",
+  "description": "AI-powered event planning and management for Encore",
   "main": "server/index.js",
   "scripts": {
     "dev": "concurrently \"npm run server\" \"npm run client\"",
@@ -15,7 +15,7 @@
     "concurrently": "^8.2.2"
   },
   "devDependencies": {},
-  "keywords": ["ai", "event", "assistant", "encore"],
+  "keywords": ["ai", "event", "architect", "planning", "encore"],
   "author": "",
   "license": "ISC"
 } 

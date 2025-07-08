@@ -1,6 +1,6 @@
-# Encore Event Order Assistant
+# Encore Architect
 
-A demo-level web application that combines a conversational AI interface with structured data management for event planning. The system allows sales managers to input event requirements in natural language and receive detailed, validated Event Orders (equipment lists) and Jobs Proposals (labor plans).
+A professional web application that combines a conversational AI interface with structured data management for event planning. The system allows sales managers to input event requirements in natural language and receive detailed, validated Event Orders (equipment lists) and Jobs Proposals (labor plans).
 
 ## 🏗️ Architecture
 
@@ -96,7 +96,7 @@ Try these example requests with the AI assistant:
 ## 📁 Project Structure
 
 ```
-FlightDeck2/
+Encore Architect/
 ├── server/                 # Backend application
 │   ├── routes/            # API endpoints
 │   ├── services/          # Business logic

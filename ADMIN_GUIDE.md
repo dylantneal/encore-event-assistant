@@ -1,8 +1,8 @@
-# Encore Event Order Assistant - Admin Guide
+# Encore Architect - Admin Guide
 
 ## Overview
 
-The Encore Event Order Assistant features a two-tier admin system designed to manage event planning data efficiently while maintaining proper access control.
+The Encore Architect features a two-tier admin system designed to manage event planning data efficiently while maintaining proper access control.
 
 ## Admin Roles
 

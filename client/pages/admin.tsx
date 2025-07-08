@@ -494,7 +494,7 @@ export default function AdminPage() {
   return (
     <>
       <Head>
-        <title>Admin - Encore FlightDeck</title>
+        <title>Admin - Encore Architect</title>
         <meta name="description" content="Property administration and data management" />
       </Head>
 

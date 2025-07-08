@@ -1,7 +1,7 @@
 {
-  "name": "encore-client",
+  "name": "encore-architect-client",
   "version": "1.0.0",
-  "description": "Frontend for Encore Event Order Assistant",
+  "description": "Frontend for Encore Architect",
   "private": true,
   "scripts": {
     "dev": "next dev",

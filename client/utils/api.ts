@@ -56,6 +56,14 @@ export const chatAPI = {
     });
   },
   
+  sendMessageWithFile: (formData: FormData) => {
+    return api.post('/chat', formData, {
+      headers: {
+        'Content-Type': 'multipart/form-data',
+      },
+    });
+  },
+  
   health: () => api.get('/health')
 };
 

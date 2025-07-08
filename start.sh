@@ -1,8 +1,8 @@
 #!/bin/bash
 
-# Encore Event Order Assistant - Startup Script
+# Encore Architect - Startup Script
 
-echo "🚀 Starting Encore Event Order Assistant..."
+echo "🚀 Starting Encore Architect..."
 
 # Check if we're in the project root
 if [ ! -f "package.json" ] || [ ! -d "client" ] || [ ! -d "server" ]; then
