@@ -125,6 +125,20 @@ if (process.env.NODE_ENV === 'production') {
   
   // Status page for when frontend isn't built yet
   app.get('/status', (req, res) => {
+    const fs = require('fs');
+    const clientBuildPath = path.join(__dirname, '..', 'client', '.next');
+    const indexPath = path.join(clientBuildPath, 'server', 'pages', 'index.html');
+    
+    // Debug information
+    const debugInfo = {
+      buildPath: clientBuildPath,
+      indexPath: indexPath,
+      buildPathExists: fs.existsSync(clientBuildPath),
+      indexPathExists: fs.existsSync(indexPath),
+      currentDir: __dirname,
+      processEnv: process.env.NODE_ENV
+    };
+    
     res.send(`
       <!DOCTYPE html>
       <html>
@@ -138,11 +152,12 @@ if (process.env.NODE_ENV === 'production') {
               padding: 40px; 
               text-align: center;
             }
-            .container { max-width: 600px; margin: 0 auto; }
+            .container { max-width: 800px; margin: 0 auto; }
             .logo { font-size: 3em; margin-bottom: 20px; background: linear-gradient(45deg, #4965ff, #06b6d4); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
-            .status { background: #1a1a2e; padding: 20px; border-radius: 10px; margin: 20px 0; }
+            .status { background: #1a1a2e; padding: 20px; border-radius: 10px; margin: 20px 0; text-align: left; }
             .api-link { color: #06b6d4; text-decoration: none; }
             .api-link:hover { text-decoration: underline; }
+            .debug { font-family: monospace; font-size: 12px; background: #2a2a3e; padding: 10px; border-radius: 5px; }
           </style>
         </head>
         <body>
@@ -158,6 +173,12 @@ if (process.env.NODE_ENV === 'production') {
               <h3>🔗 API Endpoints</h3>
               <p><a href="/api/health" class="api-link">Health Check</a></p>
               <p><a href="/api/properties" class="api-link">Properties API</a></p>
+            </div>
+            <div class="status">
+              <h3>🔍 Debug Information</h3>
+              <div class="debug">
+                <pre>${JSON.stringify(debugInfo, null, 2)}</pre>
+              </div>
             </div>
             <div class="status">
               <h3>📝 Next Steps</h3>
