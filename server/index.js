@@ -156,6 +156,93 @@ app.get('/api/test-db', async (req, res) => {
   }
 });
 
+// Simple working inventory endpoint
+app.get('/api/inventory-simple', async (req, res) => {
+  try {
+    const { property_id } = req.query;
+    if (!property_id) {
+      return res.status(400).json({ error: 'Property ID required' });
+    }
+    
+    const db = getDatabase();
+    const client = await db.connect();
+    
+    try {
+      const result = await client.query('SELECT * FROM inventory_items WHERE property_id = $1 ORDER BY name', [property_id]);
+      
+      res.json({
+        items: result.rows,
+        total: result.rows.length
+      });
+    } finally {
+      client.release();
+    }
+  } catch (error) {
+    logger.error('Simple inventory endpoint error:', error);
+    res.status(500).json({
+      error: 'Internal Server Error',
+      message: error.message
+    });
+  }
+});
+
+// Simple working unions endpoint
+app.get('/api/unions-simple', async (req, res) => {
+  try {
+    const { property_id } = req.query;
+    if (!property_id) {
+      return res.status(400).json({ error: 'Property ID required' });
+    }
+    
+    const db = getDatabase();
+    const client = await db.connect();
+    
+    try {
+      const result = await client.query('SELECT * FROM unions WHERE property_id = $1 ORDER BY name', [property_id]);
+      
+      res.json({
+        success: true,
+        data: result.rows
+      });
+    } finally {
+      client.release();
+    }
+  } catch (error) {
+    logger.error('Simple unions endpoint error:', error);
+    res.status(500).json({
+      success: false,
+      message: error.message
+    });
+  }
+});
+
+// Simple working rooms endpoint
+app.get('/api/rooms-simple', async (req, res) => {
+  try {
+    const { property_id } = req.query;
+    if (!property_id) {
+      return res.status(400).json({ error: 'Property ID required' });
+    }
+    
+    const db = getDatabase();
+    const client = await db.connect();
+    
+    try {
+      const result = await client.query('SELECT * FROM rooms WHERE property_id = $1 ORDER BY name', [property_id]);
+      
+      res.json(result.rows);
+    } finally {
+      client.release();
+    }
+  } catch (error) {
+    logger.error('Simple rooms endpoint error:', error);
+    res.status(500).json({
+      error: 'Internal Server Error',
+      message: error.message
+    });
+  }
+});
+
 // Serve frontend for all non-API routes (SPA fallback)
 if (process.env.NODE_ENV === 'production') {
   const fs = require('fs');
