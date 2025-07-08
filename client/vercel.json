@@ -3,5 +3,16 @@
   "framework": "nextjs",
   "env": {
     "NEXT_PUBLIC_API_URL": "https://web-production-ff93.up.railway.app"
-  }
+  },
+  "headers": [
+    {
+      "source": "/(.*)",
+      "headers": [
+        {
+          "key": "Access-Control-Allow-Origin",
+          "value": "*"
+        }
+      ]
+    }
+  ]
 } 

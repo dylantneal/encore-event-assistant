@@ -32,11 +32,9 @@ if (process.env.NODE_ENV === 'production') {
 // Security middleware
 app.use(helmet());
 
-// CORS configuration - Allow all origins for now to fix the issue
-app.use(cors({
-  origin: true,
-  credentials: true
-}));
+// CORS configuration
+const corsConfig = require('./cors-config');
+app.use(cors(corsConfig));
 
 // Rate limiting
 const limiter = rateLimit({
@@ -87,10 +85,11 @@ app.get('/api/health', (req, res) => {
   res.json({ 
     status: 'healthy', 
     timestamp: new Date().toISOString(),
-    version: '1.0.2',
+    version: '1.1.0',
     database: usePostgres ? 'PostgreSQL' : 'SQLite',
     corsFixed: true,
-    deploymentTime: new Date().toISOString()
+    deploymentTime: new Date().toISOString(),
+    corsConfig: 'external-file'
   });
 });
 
