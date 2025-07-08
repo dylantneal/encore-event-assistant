@@ -15,23 +15,19 @@ router.get('/', async (req, res) => {
     let params = [];
     
     if (property_id) {
-      query += ' WHERE property_id = ?';
+      query += ' WHERE property_id = $1';
       params.push(parseInt(property_id));
     }
     
     query += ' ORDER BY created_at DESC';
     
-    db.all(query, params, (err, rooms) => {
-      if (err) {
-        logger.error('Error fetching rooms:', err);
-        return res.status(500).json({
-          error: 'Database Error',
-          message: 'Failed to fetch rooms'
-        });
-      }
-      
-      res.json(rooms);
-    });
+    const client = await db.connect();
+    try {
+      const result = await client.query(query, params);
+      res.json(result.rows);
+    } finally {
+      client.release();
+    }
   } catch (error) {
     logger.error('Rooms endpoint error:', error);
     res.status(500).json({
@@ -54,24 +50,21 @@ router.get('/:id', async (req, res) => {
       });
     }
     
-    db.get('SELECT * FROM rooms WHERE id = ?', [roomId], (err, room) => {
-      if (err) {
-        logger.error('Error fetching room:', err);
-        return res.status(500).json({
-          error: 'Database Error',
-          message: 'Failed to fetch room'
-        });
-      }
+    const client = await db.connect();
+    try {
+      const result = await client.query('SELECT * FROM rooms WHERE id = $1', [roomId]);
       
-      if (!room) {
+      if (result.rows.length === 0) {
         return res.status(404).json({
           error: 'Not Found',
           message: 'Room not found'
         });
       }
       
-      res.json(room);
-    });
+      res.json(result.rows[0]);
+    } finally {
+      client.release();
+    }
   } catch (error) {
     logger.error('Room endpoint error:', error);
     res.status(500).json({

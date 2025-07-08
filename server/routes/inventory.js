@@ -70,24 +70,21 @@ router.get('/:id', async (req, res) => {
       });
     }
     
-    db.get('SELECT * FROM inventory_items WHERE id = ?', [itemId], (err, item) => {
-      if (err) {
-        logger.error('Error fetching inventory item:', err);
-        return res.status(500).json({
-          error: 'Database Error',
-          message: 'Failed to fetch inventory item'
-        });
-      }
+    const client = await db.connect();
+    try {
+      const result = await client.query('SELECT * FROM inventory_items WHERE id = $1', [itemId]);
       
-      if (!item) {
+      if (result.rows.length === 0) {
         return res.status(404).json({
           error: 'Not Found',
           message: 'Inventory item not found'
         });
       }
       
-      res.json(item);
-    });
+      res.json(result.rows[0]);
+    } finally {
+      client.release();
+    }
   } catch (error) {
     logger.error('Inventory item endpoint error:', error);
     res.status(500).json({
@@ -133,36 +130,33 @@ router.post('/', async (req, res) => {
     }
     
     const db = getDatabase();
+    const client = await db.connect();
     
-    db.run(
-      `INSERT INTO inventory_items 
-       (property_id, name, description, category, sub_category, quantity_available, status, asset_tag, model, manufacturer, condition_notes) 
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [property_id, name, description, category, sub_category, quantity_available || 0, status || 'available', asset_tag, model, manufacturer, condition_notes],
-      function(err) {
-        if (err) {
-          logger.error('Error creating inventory item:', err);
-          return res.status(500).json({
-            error: 'Database Error',
-            message: 'Failed to create inventory item'
-          });
-        }
-        
-        // Fetch the created item
-        db.get('SELECT * FROM inventory_items WHERE id = ?', [this.lastID], (err, item) => {
-          if (err) {
-            logger.error('Error fetching created inventory item:', err);
-            return res.status(500).json({
-              error: 'Database Error',
-              message: 'Inventory item created but failed to fetch details'
-            });
-          }
-          
-          logger.info('Inventory item created successfully', { id: this.lastID, name, property_id });
-          res.status(201).json(item);
-        });
-      }
-    );
+    try {
+      const result = await client.query(`
+        INSERT INTO inventory_items 
+        (property_id, name, description, category, sub_category, quantity_available, status, asset_tag, model, manufacturer, condition_notes) 
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+        RETURNING *
+      `, [
+        property_id, 
+        name, 
+        description, 
+        category, 
+        sub_category, 
+        quantity_available || 0, 
+        status || 'available', 
+        asset_tag, 
+        model, 
+        manufacturer, 
+        condition_notes
+      ]);
+      
+      logger.info('Inventory item created successfully', { id: result.rows[0].id, name, property_id });
+      res.status(201).json(result.rows[0]);
+    } finally {
+      client.release();
+    }
   } catch (error) {
     logger.error('Create inventory item endpoint error:', error);
     res.status(500).json({
@@ -216,45 +210,43 @@ router.put('/:id', async (req, res) => {
     }
     
     const db = getDatabase();
+    const client = await db.connect();
     
-    db.run(
-      `UPDATE inventory_items 
-       SET property_id = ?, name = ?, description = ?, category = ?, sub_category = ?, 
-           quantity_available = ?, status = ?, asset_tag = ?, model = ?, manufacturer = ?, 
-           condition_notes = ?, updated_at = CURRENT_TIMESTAMP 
-       WHERE id = ?`,
-      [property_id, name, description, category, sub_category, quantity_available || 0, status || 'available', asset_tag, model, manufacturer, condition_notes, itemId],
-      function(err) {
-        if (err) {
-          logger.error('Error updating inventory item:', err);
-          return res.status(500).json({
-            error: 'Database Error',
-            message: 'Failed to update inventory item'
-          });
-        }
-        
-        if (this.changes === 0) {
-          return res.status(404).json({
-            error: 'Not Found',
-            message: 'Inventory item not found'
-          });
-        }
-        
-        // Fetch the updated item
-        db.get('SELECT * FROM inventory_items WHERE id = ?', [itemId], (err, item) => {
-          if (err) {
-            logger.error('Error fetching updated inventory item:', err);
-            return res.status(500).json({
-              error: 'Database Error',
-              message: 'Inventory item updated but failed to fetch details'
-            });
-          }
-          
-          logger.info('Inventory item updated successfully', { id: itemId, name });
-          res.json(item);
+    try {
+      const result = await client.query(`
+        UPDATE inventory_items 
+        SET property_id = $1, name = $2, description = $3, category = $4, sub_category = $5, 
+            quantity_available = $6, status = $7, asset_tag = $8, model = $9, manufacturer = $10, 
+            condition_notes = $11, updated_at = CURRENT_TIMESTAMP 
+        WHERE id = $12
+        RETURNING *
+      `, [
+        property_id, 
+        name, 
+        description, 
+        category, 
+        sub_category, 
+        quantity_available || 0, 
+        status || 'available', 
+        asset_tag, 
+        model, 
+        manufacturer, 
+        condition_notes, 
+        itemId
+      ]);
+      
+      if (result.rowCount === 0) {
+        return res.status(404).json({
+          error: 'Not Found',
+          message: 'Inventory item not found'
         });
       }
-    );
+      
+      logger.info('Inventory item updated successfully', { id: itemId, name });
+      res.json(result.rows[0]);
+    } finally {
+      client.release();
+    }
   } catch (error) {
     logger.error('Update inventory item endpoint error:', error);
     res.status(500).json({
@@ -277,17 +269,12 @@ router.delete('/:id', async (req, res) => {
     }
     
     const db = getDatabase();
+    const client = await db.connect();
     
-    db.run('DELETE FROM inventory_items WHERE id = ?', [itemId], function(err) {
-      if (err) {
-        logger.error('Error deleting inventory item:', err);
-        return res.status(500).json({
-          error: 'Database Error',
-          message: 'Failed to delete inventory item'
-        });
-      }
+    try {
+      const result = await client.query('DELETE FROM inventory_items WHERE id = $1', [itemId]);
       
-      if (this.changes === 0) {
+      if (result.rowCount === 0) {
         return res.status(404).json({
           error: 'Not Found',
           message: 'Inventory item not found'
@@ -299,7 +286,9 @@ router.delete('/:id', async (req, res) => {
         message: 'Inventory item deleted successfully',
         id: itemId
       });
-    });
+    } finally {
+      client.release();
+    }
   } catch (error) {
     logger.error('Delete inventory item endpoint error:', error);
     res.status(500).json({
@@ -319,24 +308,19 @@ router.get('/categories', async (req, res) => {
     let params = [];
     
     if (property_id) {
-      query += ' WHERE property_id = ?';
+      query += ' WHERE property_id = $1';
       params.push(parseInt(property_id));
     }
     
     query += ' ORDER BY category, sub_category';
     
-    db.all(query, params, (err, categories) => {
-      if (err) {
-        logger.error('Error fetching categories:', err);
-        return res.status(500).json({
-          error: 'Database Error',
-          message: 'Failed to fetch categories'
-        });
-      }
+    const client = await db.connect();
+    try {
+      const result = await client.query(query, params);
       
       // Group by category
       const grouped = {};
-      categories.forEach(item => {
+      result.rows.forEach(item => {
         if (!grouped[item.category]) {
           grouped[item.category] = [];
         }
@@ -346,7 +330,9 @@ router.get('/categories', async (req, res) => {
       });
       
       res.json(grouped);
-    });
+    } finally {
+      client.release();
+    }
   } catch (error) {
     logger.error('Categories endpoint error:', error);
     res.status(500).json({
