@@ -85,7 +85,7 @@ app.get('/api/health', (req, res) => {
   res.json({ 
     status: 'healthy', 
     timestamp: new Date().toISOString(),
-    version: '1.1.0',
+    version: '1.1.3',
     database: usePostgres ? 'PostgreSQL' : 'SQLite',
     corsFixed: true,
     deploymentTime: new Date().toISOString(),
@@ -112,6 +112,45 @@ app.post('/api/repair-database', async (req, res) => {
     res.status(500).json({
       status: 'error',
       message: 'Database repair failed',
+      error: error.message
+    });
+  }
+});
+
+// Test database endpoint
+app.get('/api/test-db', async (req, res) => {
+  try {
+    const db = getDatabase();
+    const client = await db.connect();
+    
+    try {
+      const result = await client.query('SELECT COUNT(*) as count FROM inventory_items');
+      const inventoryCount = result.rows[0].count;
+      
+      const roomsResult = await client.query('SELECT COUNT(*) as count FROM rooms');
+      const roomsCount = roomsResult.rows[0].count;
+      
+      const unionsResult = await client.query('SELECT COUNT(*) as count FROM unions');
+      const unionsCount = unionsResult.rows[0].count;
+      
+      res.json({
+        status: 'success',
+        database: 'PostgreSQL',
+        counts: {
+          inventory: inventoryCount,
+          rooms: roomsCount,
+          unions: unionsCount
+        },
+        timestamp: new Date().toISOString()
+      });
+    } finally {
+      client.release();
+    }
+  } catch (error) {
+    logger.error('Database test failed:', error);
+    res.status(500).json({
+      status: 'error',
+      message: 'Database test failed',
       error: error.message
     });
   }
