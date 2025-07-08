@@ -1,8 +1,3 @@
-[phases.build]
-cmds = [
-  "cd server && npm install"
-]
-
 [phases.start]
 cmd = "cd server && npm start"
 
