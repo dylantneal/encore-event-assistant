@@ -36,6 +36,7 @@ app.use(helmet());
 const allowedOrigins = [
   'http://localhost:3000',
   'https://encore-architect-frontend-hwt1dgokc-dylans-projects-1d0f909d.vercel.app',
+  'https://encore-architect-frontend-7vmaezx3z-dylans-projects-1d0f909d.vercel.app',
   'https://encore-architect-frontend.vercel.app',
   process.env.CLIENT_URL
 ].filter(Boolean);
@@ -45,10 +46,17 @@ app.use(cors({
     // Allow requests with no origin (like mobile apps, curl requests)
     if (!origin) return callback(null, true);
     
-    if (allowedOrigins.some(allowedOrigin => origin.includes(allowedOrigin.replace('https://', '').replace('http://', '')))) {
+    // Check if origin exactly matches any allowed origin
+    if (allowedOrigins.includes(origin)) {
       return callback(null, true);
     }
     
+    // Also allow any vercel.app subdomain for this project
+    if (origin && origin.includes('encore-architect-frontend') && origin.includes('vercel.app')) {
+      return callback(null, true);
+    }
+    
+    console.log('CORS blocked origin:', origin);
     callback(new Error('Not allowed by CORS'));
   },
   credentials: true
