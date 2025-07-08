@@ -29,6 +29,33 @@ router.get('/', async (req, res) => {
   }
 });
 
+// GET /api/properties/code/:code - Get property by property code
+router.get('/code/:code', async (req, res) => {
+  try {
+    const { code } = req.params;
+    const db = getDatabase();
+    const adapter = new DatabaseAdapter(db, usePostgres ? 'postgres' : 'sqlite');
+    
+    const property = await adapter.get('SELECT * FROM properties WHERE property_code = ?', [code]);
+    
+    if (!property) {
+      return res.status(404).json({
+        error: 'Not Found',
+        message: 'Property not found'
+      });
+    }
+    
+    logger.info(`Retrieved property by code ${code}`);
+    res.json(property);
+  } catch (error) {
+    logger.error('Property by code endpoint error:', error);
+    res.status(500).json({
+      error: 'Internal Server Error',
+      message: 'An error occurred while fetching the property'
+    });
+  }
+});
+
 // GET /api/properties/:id - Get a specific property
 router.get('/:id', async (req, res) => {
   try {
@@ -56,33 +83,6 @@ router.get('/:id', async (req, res) => {
     res.json(property);
   } catch (error) {
     logger.error('Property endpoint error:', error);
-    res.status(500).json({
-      error: 'Internal Server Error',
-      message: 'An error occurred while fetching the property'
-    });
-  }
-});
-
-// GET /api/properties/code/:code - Get property by property code
-router.get('/code/:code', async (req, res) => {
-  try {
-    const { code } = req.params;
-    const db = getDatabase();
-    const adapter = new DatabaseAdapter(db, usePostgres ? 'postgres' : 'sqlite');
-    
-    const property = await adapter.get('SELECT * FROM properties WHERE property_code = ?', [code]);
-    
-    if (!property) {
-      return res.status(404).json({
-        error: 'Not Found',
-        message: 'Property not found'
-      });
-    }
-    
-    logger.info(`Retrieved property by code ${code}`);
-    res.json(property);
-  } catch (error) {
-    logger.error('Property by code endpoint error:', error);
     res.status(500).json({
       error: 'Internal Server Error',
       message: 'An error occurred while fetching the property'
