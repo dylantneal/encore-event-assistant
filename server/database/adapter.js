@@ -20,9 +20,10 @@ class DatabaseAdapter {
         });
       });
     } else {
-      // PostgreSQL
+      // PostgreSQL - convert query first
       try {
-        const result = await this.db.query(sql, params);
+        const { sql: convertedSql, params: convertedParams } = this.convertQuery(sql, params);
+        const result = await this.db.query(convertedSql, convertedParams);
         return result;
       } catch (error) {
         logger.error('PostgreSQL query error:', error);
@@ -49,9 +50,10 @@ class DatabaseAdapter {
         });
       });
     } else {
-      // PostgreSQL
+      // PostgreSQL - convert query first
       try {
-        const result = await this.db.query(sql, params);
+        const { sql: convertedSql, params: convertedParams } = this.convertQuery(sql, params);
+        const result = await this.db.query(convertedSql, convertedParams);
         return {
           lastID: result.rows[0]?.id || null,
           changes: result.rowCount,
