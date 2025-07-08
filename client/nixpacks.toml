@@ -8,7 +8,7 @@ cmds = ["npm ci"]
 cmds = ["npm run build"]
 
 [start]
-cmd = "npm start -- -p $PORT"
+cmd = "npm start"
 
 [variables]
 NODE_ENV = "production"
