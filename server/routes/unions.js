@@ -1,6 +1,12 @@
 const express = require('express');
 const router = express.Router();
-const { getDatabase } = require('../database/init');
+
+// Auto-detect database type and get the appropriate database connection
+const usePostgres = !!process.env.DATABASE_URL;
+const { getDatabase } = usePostgres 
+  ? require('../database/postgres-init') 
+  : require('../database/init');
+
 const { logger } = require('../utils/logger');
 
 // Validation functions

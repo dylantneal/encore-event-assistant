@@ -104,22 +104,20 @@ const validateOrder = async (equipmentList, propertyId, attendees, eventDuration
     }
   };
 
+  let client;
   try {
+    client = await db.connect();
+
     // 1. Validate inventory availability
     for (const equipmentItem of equipmentList) {
       const { item_name, quantity, category } = equipmentItem;
       
       // Query inventory for this item
-      const inventoryItems = await new Promise((resolve, reject) => {
-        db.all(
-          'SELECT * FROM inventory_items WHERE property_id = ? AND (name = ? OR category = ?) AND status = "available"',
-          [propertyId, item_name, category],
-          (err, rows) => {
-            if (err) reject(err);
-            else resolve(rows || []);
-          }
-        );
-      });
+      const result = await client.query(
+        'SELECT * FROM inventory_items WHERE property_id = $1 AND (name = $2 OR category = $3) AND status = $4',
+        [propertyId, item_name, category, 'available']
+      );
+      const inventoryItems = result.rows;
 
       let availableQuantity = 0;
       const matchingItems = [];
@@ -157,16 +155,11 @@ const validateOrder = async (equipmentList, propertyId, attendees, eventDuration
     // 2. Validate room capacity (if room is specified in the order)
     // This would require the order to specify a room, which we'll check if available
     if (attendees) {
-      const rooms = await new Promise((resolve, reject) => {
-        db.all(
-          'SELECT * FROM rooms WHERE property_id = ? ORDER BY capacity ASC',
-          [propertyId],
-          (err, rows) => {
-            if (err) reject(err);
-            else resolve(rows || []);
-          }
-        );
-      });
+      const roomsResult = await client.query(
+        'SELECT * FROM rooms WHERE property_id = $1 ORDER BY capacity ASC',
+        [propertyId]
+      );
+      const rooms = roomsResult.rows;
 
       const suitableRooms = rooms.filter(room => room.capacity >= attendees);
       
@@ -190,16 +183,11 @@ const validateOrder = async (equipmentList, propertyId, attendees, eventDuration
     }
 
     // 3. Validate labor requirements
-    const laborRules = await new Promise((resolve, reject) => {
-      db.all(
-        'SELECT * FROM labor_rules WHERE property_id = ?',
-        [propertyId],
-        (err, rows) => {
-          if (err) reject(err);
-          else resolve(rows || []);
-        }
-      );
-    });
+    const laborRulesResult = await client.query(
+      'SELECT * FROM labor_rules WHERE property_id = $1',
+      [propertyId]
+    );
+    const laborRules = laborRulesResult.rows;
 
     // Parse labor rules
     const rules = {};
@@ -244,6 +232,10 @@ const validateOrder = async (equipmentList, propertyId, attendees, eventDuration
     logger.error('Error during order validation:', error);
     validation.valid = false;
     validation.errors.push('Validation service error: ' + error.message);
+  } finally {
+    if (client) {
+      client.release();
+    }
   }
 
   return validation;
@@ -254,18 +246,16 @@ const validateOrder = async (equipmentList, propertyId, attendees, eventDuration
  */
 const validateRoomCapability = async (roomName, equipmentList, propertyId) => {
   const db = getDatabase();
+  let client;
   
   try {
-    const room = await new Promise((resolve, reject) => {
-      db.get(
-        'SELECT * FROM rooms WHERE property_id = ? AND name = ?',
-        [propertyId, roomName],
-        (err, row) => {
-          if (err) reject(err);
-          else resolve(row);
-        }
-      );
-    });
+    client = await db.connect();
+    
+    const result = await client.query(
+      'SELECT * FROM rooms WHERE property_id = $1 AND name = $2',
+      [propertyId, roomName]
+    );
+    const room = result.rows[0];
 
     if (!room) {
       return {
@@ -333,6 +323,10 @@ const validateRoomCapability = async (roomName, equipmentList, propertyId) => {
       reason: 'Validation error: ' + error.message,
       room_name: roomName
     };
+  } finally {
+    if (client) {
+      client.release();
+    }
   }
 };
 

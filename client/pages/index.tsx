@@ -2,7 +2,6 @@ import React, { useState, useEffect } from 'react';
 import Head from 'next/head';
 import { useRouter } from 'next/router';
 import { useProperty } from '../contexts/PropertyContext';
-import { api } from '../utils/api';
 import { Building2, MessageSquare, Settings, Search, MapPin, Sparkles, Zap, Shield, AlertTriangle, Compass, Layers } from 'lucide-react';
 
 interface Property {
@@ -16,20 +15,14 @@ interface Property {
 
 export default function Home() {
   const router = useRouter();
-  const { selectedProperty, setSelectedProperty } = useProperty();
-  const [properties, setProperties] = useState<Property[]>([]);
+  const { selectedProperty, setSelectedProperty, properties, isLoading, loadProperties } = useProperty();
   const [filteredProperties, setFilteredProperties] = useState<Property[]>([]);
-  const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [isAdmin, setIsAdmin] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
 
+  // Filter properties based on search term
   useEffect(() => {
-    loadProperties();
-  }, []);
-
-  useEffect(() => {
-    // Filter properties based on search term
     if (searchTerm.trim() === '') {
       setFilteredProperties(properties);
     } else {
@@ -42,44 +35,16 @@ export default function Home() {
     }
   }, [searchTerm, properties]);
 
-  const loadProperties = async () => {
-    try {
-      setLoading(true);
-      console.log('Loading properties from:', `${process.env.NEXT_PUBLIC_API_URL || 'https://web-production-ff93.up.railway.app'}/api/properties`);
-      const response = await api.get('/properties');
-      console.log('Properties loaded:', response.data.length);
-      setProperties(response.data);
-      setFilteredProperties(response.data);
-      setError(null); // Clear any previous errors
-    } catch (err: any) {
-      console.error('Error loading properties:', err);
-      console.error('Error details:', {
-        message: err.message,
-        status: err.response?.status,
-        statusText: err.response?.statusText,
-        data: err.response?.data
-      });
-      
-      if (err.response?.status === 0 || err.code === 'ERR_NETWORK') {
-        setError('Network error: CORS issue detected. The backend deployment is in progress. Please try again in a few minutes.');
-      } else if (err.response?.status === 403) {
-        setError('Access denied: CORS issue detected. Please try refreshing the page.');
-      } else if (err.response?.status >= 500) {
-        setError('Server error: The backend service is temporarily unavailable.');
-      } else {
-        setError(`Failed to load properties: ${err.message}. The backend is being updated - please try again shortly.`);
-      }
-    } finally {
-      setLoading(false);
+  // Clear any previous errors when properties load successfully
+  useEffect(() => {
+    if (properties.length > 0) {
+      setError(null);
     }
-  };
+  }, [properties]);
 
   const handlePropertySelect = (property: Property) => {
     setSelectedProperty(property);
-    // Store in localStorage for persistence
-    if (typeof window !== 'undefined') {
-      localStorage.setItem('selectedProperty', JSON.stringify(property));
-    }
+    setError(null);
   };
 
   const handleStartChat = () => {
@@ -98,7 +63,12 @@ export default function Home() {
     router.push('/admin');
   };
 
-  if (loading) {
+  const handleRetryLoad = () => {
+    setError(null);
+    loadProperties();
+  };
+
+  if (isLoading) {
     return (
       <div className="min-h-screen bg-space-900 flex items-center justify-center relative overflow-hidden">
         <div className="absolute inset-0 bg-mesh-gradient opacity-30 animate-gradient"></div>
@@ -108,6 +78,28 @@ export default function Home() {
             <div className="absolute inset-0 animate-ping rounded-full h-16 w-16 border border-primary-400 opacity-30 mx-auto"></div>
           </div>
           <p className="text-gray-300 mt-4 animate-pulse">Loading properties...</p>
+        </div>
+      </div>
+    );
+  }
+
+  // Show error state if no properties loaded and there's an error
+  if (properties.length === 0 && error) {
+    return (
+      <div className="min-h-screen bg-space-900 flex items-center justify-center relative overflow-hidden">
+        <div className="absolute inset-0 bg-mesh-gradient opacity-20 animate-gradient"></div>
+        <div className="text-center relative z-10 max-w-md mx-auto px-4">
+          <div className="p-8 bg-white/5 backdrop-blur-sm border border-white/10 rounded-xl">
+            <AlertTriangle className="w-12 h-12 text-red-400 mx-auto mb-4" />
+            <h2 className="text-xl font-bold text-white mb-2">Connection Error</h2>
+            <p className="text-gray-300 mb-6">{error}</p>
+            <button
+              onClick={handleRetryLoad}
+              className="btn-primary"
+            >
+              Try Again
+            </button>
+          </div>
         </div>
       </div>
     );

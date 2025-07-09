@@ -90,34 +90,20 @@ router.post('/', async (req, res) => {
     }
     
     const db = getDatabase();
+    const client = await db.connect();
     
-    db.run(
-      'INSERT INTO rooms (property_id, name, capacity, dimensions, built_in_av, features) VALUES (?, ?, ?, ?, ?, ?)',
-      [property_id, name, capacity, dimensions, built_in_av, features],
-      function(err) {
-        if (err) {
-          logger.error('Error creating room:', err);
-          return res.status(500).json({
-            error: 'Database Error',
-            message: 'Failed to create room'
-          });
-        }
-        
-        // Fetch the created room
-        db.get('SELECT * FROM rooms WHERE id = ?', [this.lastID], (err, room) => {
-          if (err) {
-            logger.error('Error fetching created room:', err);
-            return res.status(500).json({
-              error: 'Database Error',
-              message: 'Room created but failed to fetch details'
-            });
-          }
-          
-          logger.info('Room created successfully', { id: this.lastID, name, property_id });
-          res.status(201).json(room);
-        });
-      }
-    );
+    try {
+      const result = await client.query(`
+        INSERT INTO rooms (property_id, name, capacity, dimensions, built_in_av, features) 
+        VALUES ($1, $2, $3, $4, $5, $6)
+        RETURNING *
+      `, [property_id, name, capacity, dimensions, built_in_av, features]);
+      
+      logger.info('Room created successfully', { id: result.rows[0].id, name, property_id });
+      res.status(201).json(result.rows[0]);
+    } finally {
+      client.release();
+    }
   } catch (error) {
     logger.error('Create room endpoint error:', error);
     res.status(500).json({
@@ -151,41 +137,29 @@ router.put('/:id', async (req, res) => {
     }
     
     const db = getDatabase();
+    const client = await db.connect();
     
-    db.run(
-      'UPDATE rooms SET property_id = ?, name = ?, capacity = ?, dimensions = ?, built_in_av = ?, features = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
-      [property_id, name, capacity, dimensions, built_in_av, features, roomId],
-      function(err) {
-        if (err) {
-          logger.error('Error updating room:', err);
-          return res.status(500).json({
-            error: 'Database Error',
-            message: 'Failed to update room'
-          });
-        }
-        
-        if (this.changes === 0) {
-          return res.status(404).json({
-            error: 'Not Found',
-            message: 'Room not found'
-          });
-        }
-        
-        // Fetch the updated room
-        db.get('SELECT * FROM rooms WHERE id = ?', [roomId], (err, room) => {
-          if (err) {
-            logger.error('Error fetching updated room:', err);
-            return res.status(500).json({
-              error: 'Database Error',
-              message: 'Room updated but failed to fetch details'
-            });
-          }
-          
-          logger.info('Room updated successfully', { id: roomId, name });
-          res.json(room);
+    try {
+      const result = await client.query(`
+        UPDATE rooms 
+        SET property_id = $1, name = $2, capacity = $3, dimensions = $4, 
+            built_in_av = $5, features = $6, updated_at = CURRENT_TIMESTAMP 
+        WHERE id = $7
+        RETURNING *
+      `, [property_id, name, capacity, dimensions, built_in_av, features, roomId]);
+      
+      if (result.rowCount === 0) {
+        return res.status(404).json({
+          error: 'Not Found',
+          message: 'Room not found'
         });
       }
-    );
+      
+      logger.info('Room updated successfully', { id: roomId, name });
+      res.json(result.rows[0]);
+    } finally {
+      client.release();
+    }
   } catch (error) {
     logger.error('Update room endpoint error:', error);
     res.status(500).json({
@@ -208,17 +182,12 @@ router.delete('/:id', async (req, res) => {
     }
     
     const db = getDatabase();
+    const client = await db.connect();
     
-    db.run('DELETE FROM rooms WHERE id = ?', [roomId], function(err) {
-      if (err) {
-        logger.error('Error deleting room:', err);
-        return res.status(500).json({
-          error: 'Database Error',
-          message: 'Failed to delete room'
-        });
-      }
+    try {
+      const result = await client.query('DELETE FROM rooms WHERE id = $1', [roomId]);
       
-      if (this.changes === 0) {
+      if (result.rowCount === 0) {
         return res.status(404).json({
           error: 'Not Found',
           message: 'Room not found'
@@ -230,7 +199,9 @@ router.delete('/:id', async (req, res) => {
         message: 'Room deleted successfully',
         id: roomId
       });
-    });
+    } finally {
+      client.release();
+    }
   } catch (error) {
     logger.error('Delete room endpoint error:', error);
     res.status(500).json({

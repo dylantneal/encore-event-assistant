@@ -1,5 +1,4 @@
 const express = require('express');
-const DatabaseAdapter = require('../database/adapter');
 const { logger } = require('../utils/logger');
 
 // Auto-detect database type and get the appropriate database connection
@@ -14,12 +13,17 @@ const router = express.Router();
 router.get('/', async (req, res) => {
   try {
     const db = getDatabase();
-    const adapter = new DatabaseAdapter(db, usePostgres ? 'postgres' : 'sqlite');
+    const client = await db.connect();
     
-    const rows = await adapter.all('SELECT * FROM properties ORDER BY name');
-    
-    logger.info(`Retrieved ${rows.length} properties`);
-    res.json(rows);
+    try {
+      const result = await client.query('SELECT * FROM properties ORDER BY name');
+      const rows = result.rows || [];
+      
+      logger.info(`Retrieved ${rows.length} properties`);
+      res.json(rows);
+    } finally {
+      client.release();
+    }
   } catch (error) {
     logger.error('Properties endpoint error:', error);
     res.status(500).json({
@@ -34,19 +38,24 @@ router.get('/code/:code', async (req, res) => {
   try {
     const { code } = req.params;
     const db = getDatabase();
-    const adapter = new DatabaseAdapter(db, usePostgres ? 'postgres' : 'sqlite');
+    const client = await db.connect();
     
-    const property = await adapter.get('SELECT * FROM properties WHERE property_code = ?', [code]);
-    
-    if (!property) {
-      return res.status(404).json({
-        error: 'Not Found',
-        message: 'Property not found'
-      });
+    try {
+      const result = await client.query('SELECT * FROM properties WHERE property_code = $1', [code]);
+      const property = result.rows[0];
+      
+      if (!property) {
+        return res.status(404).json({
+          error: 'Not Found',
+          message: 'Property not found'
+        });
+      }
+      
+      logger.info(`Retrieved property by code ${code}`);
+      res.json(property);
+    } finally {
+      client.release();
     }
-    
-    logger.info(`Retrieved property by code ${code}`);
-    res.json(property);
   } catch (error) {
     logger.error('Property by code endpoint error:', error);
     res.status(500).json({
@@ -59,8 +68,6 @@ router.get('/code/:code', async (req, res) => {
 // GET /api/properties/:id - Get a specific property
 router.get('/:id', async (req, res) => {
   try {
-    const db = getDatabase();
-    const adapter = new DatabaseAdapter(db, usePostgres ? 'postgres' : 'sqlite');
     const propertyId = parseInt(req.params.id);
     
     if (isNaN(propertyId)) {
@@ -70,17 +77,25 @@ router.get('/:id', async (req, res) => {
       });
     }
     
-    const property = await adapter.get('SELECT * FROM properties WHERE id = ?', [propertyId]);
+    const db = getDatabase();
+    const client = await db.connect();
     
-    if (!property) {
-      return res.status(404).json({
-        error: 'Not Found',
-        message: 'Property not found'
-      });
+    try {
+      const result = await client.query('SELECT * FROM properties WHERE id = $1', [propertyId]);
+      const property = result.rows[0];
+      
+      if (!property) {
+        return res.status(404).json({
+          error: 'Not Found',
+          message: 'Property not found'
+        });
+      }
+      
+      logger.info(`Retrieved property ${propertyId}`);
+      res.json(property);
+    } finally {
+      client.release();
     }
-    
-    logger.info(`Retrieved property ${propertyId}`);
-    res.json(property);
   } catch (error) {
     logger.error('Property endpoint error:', error);
     res.status(500).json({
@@ -112,42 +127,30 @@ router.post('/', async (req, res) => {
     }
     
     const db = getDatabase();
+    const client = await db.connect();
     
-    db.run(
-      `INSERT INTO properties (property_code, name, location, description, contact_info) 
-       VALUES (?, ?, ?, ?, ?)`,
-      [property_code, name, location || '', description || '', contact_info || ''],
-      function(err) {
-        if (err) {
-          if (err.code === 'SQLITE_CONSTRAINT_UNIQUE') {
-            return res.status(409).json({
-              error: 'Conflict',
-              message: 'Property code already exists'
-            });
-          }
-          
-          logger.error('Error creating property:', err);
-          return res.status(500).json({
-            error: 'Database Error',
-            message: 'Failed to create property'
-          });
-        }
-        
-        // Fetch the created property
-        db.get('SELECT * FROM properties WHERE id = ?', [this.lastID], (err, property) => {
-          if (err) {
-            logger.error('Error fetching created property:', err);
-            return res.status(500).json({
-              error: 'Database Error',
-              message: 'Property created but failed to fetch details'
-            });
-          }
-          
-          logger.info(`Created property ${this.lastID} with code ${property_code}`);
-          res.status(201).json(property);
+    try {
+      const result = await client.query(
+        `INSERT INTO properties (property_code, name, location, description, contact_info) 
+         VALUES ($1, $2, $3, $4, $5) RETURNING *`,
+        [property_code, name, location || '', description || '', contact_info || '']
+      );
+      
+      const property = result.rows[0];
+      
+      logger.info(`Created property ${property.id} with code ${property_code}`);
+      res.status(201).json(property);
+    } catch (error) {
+      if (error.code === '23505') { // PostgreSQL unique violation
+        return res.status(409).json({
+          error: 'Conflict',
+          message: 'Property code already exists'
         });
       }
-    );
+      throw error;
+    } finally {
+      client.release();
+    }
   } catch (error) {
     logger.error('Create property endpoint error:', error);
     res.status(500).json({
@@ -187,50 +190,38 @@ router.put('/:id', async (req, res) => {
     }
     
     const db = getDatabase();
+    const client = await db.connect();
     
-    db.run(
-      `UPDATE properties 
-       SET property_code = ?, name = ?, location = ?, description = ?, contact_info = ?, updated_at = CURRENT_TIMESTAMP
-       WHERE id = ?`,
-      [property_code, name, location || '', description || '', contact_info || '', propertyId],
-      function(err) {
-        if (err) {
-          if (err.code === 'SQLITE_CONSTRAINT_UNIQUE') {
-            return res.status(409).json({
-              error: 'Conflict',
-              message: 'Property code already exists'
-            });
-          }
-          
-          logger.error('Error updating property:', err);
-          return res.status(500).json({
-            error: 'Database Error',
-            message: 'Failed to update property'
-          });
-        }
-        
-        if (this.changes === 0) {
-          return res.status(404).json({
-            error: 'Not Found',
-            message: 'Property not found'
-          });
-        }
-        
-        // Fetch the updated property
-        db.get('SELECT * FROM properties WHERE id = ?', [propertyId], (err, property) => {
-          if (err) {
-            logger.error('Error fetching updated property:', err);
-            return res.status(500).json({
-              error: 'Database Error',
-              message: 'Property updated but failed to fetch details'
-            });
-          }
-          
-          logger.info(`Updated property ${propertyId}`);
-          res.json(property);
+    try {
+      const result = await client.query(
+        `UPDATE properties 
+         SET property_code = $1, name = $2, location = $3, description = $4, contact_info = $5, updated_at = CURRENT_TIMESTAMP
+         WHERE id = $6 RETURNING *`,
+        [property_code, name, location || '', description || '', contact_info || '', propertyId]
+      );
+      
+      if (result.rowCount === 0) {
+        return res.status(404).json({
+          error: 'Not Found',
+          message: 'Property not found'
         });
       }
-    );
+      
+      const property = result.rows[0];
+      
+      logger.info(`Updated property ${propertyId}`);
+      res.json(property);
+    } catch (error) {
+      if (error.code === '23505') { // PostgreSQL unique violation
+        return res.status(409).json({
+          error: 'Conflict',
+          message: 'Property code already exists'
+        });
+      }
+      throw error;
+    } finally {
+      client.release();
+    }
   } catch (error) {
     logger.error('Update property endpoint error:', error);
     res.status(500).json({
@@ -253,17 +244,12 @@ router.delete('/:id', async (req, res) => {
     }
     
     const db = getDatabase();
+    const client = await db.connect();
     
-    db.run('DELETE FROM properties WHERE id = ?', [propertyId], function(err) {
-      if (err) {
-        logger.error('Error deleting property:', err);
-        return res.status(500).json({
-          error: 'Database Error',
-          message: 'Failed to delete property'
-        });
-      }
+    try {
+      const result = await client.query('DELETE FROM properties WHERE id = $1', [propertyId]);
       
-      if (this.changes === 0) {
+      if (result.rowCount === 0) {
         return res.status(404).json({
           error: 'Not Found',
           message: 'Property not found'
@@ -272,7 +258,9 @@ router.delete('/:id', async (req, res) => {
       
       logger.info(`Deleted property ${propertyId}`);
       res.json({ message: 'Property deleted successfully' });
-    });
+    } finally {
+      client.release();
+    }
   } catch (error) {
     logger.error('Delete property endpoint error:', error);
     res.status(500).json({
@@ -287,33 +275,31 @@ router.get('/search/:query', async (req, res) => {
   try {
     const { query } = req.params;
     const db = getDatabase();
+    const client = await db.connect();
     
-    const searchTerm = `%${query}%`;
-    
-    db.all(
-      `SELECT * FROM properties 
-       WHERE name LIKE ? OR property_code LIKE ? OR location LIKE ?
-       ORDER BY 
-         CASE 
-           WHEN property_code = ? THEN 1 
-           WHEN name LIKE ? THEN 2 
-           ELSE 3 
-         END, 
-         name`,
-      [searchTerm, searchTerm, searchTerm, query, `${query}%`],
-      (err, rows) => {
-        if (err) {
-          logger.error('Error searching properties:', err);
-          return res.status(500).json({
-            error: 'Database Error',
-            message: 'Failed to search properties'
-          });
-        }
-        
-        logger.info(`Found ${rows.length} properties matching "${query}"`);
-        res.json(rows);
-      }
-    );
+    try {
+      const searchTerm = `%${query}%`;
+      
+      const result = await client.query(
+        `SELECT * FROM properties 
+         WHERE name ILIKE $1 OR property_code ILIKE $2 OR location ILIKE $3
+         ORDER BY 
+           CASE 
+             WHEN property_code = $4 THEN 1 
+             WHEN name ILIKE $5 THEN 2 
+             ELSE 3 
+           END, 
+           name`,
+        [searchTerm, searchTerm, searchTerm, query, `${query}%`]
+      );
+      
+      const rows = result.rows;
+      
+      logger.info(`Found ${rows.length} properties matching "${query}"`);
+      res.json(rows);
+    } finally {
+      client.release();
+    }
   } catch (error) {
     logger.error('Search properties endpoint error:', error);
     res.status(500).json({

@@ -8,7 +8,7 @@ require('dotenv').config();
 
 // Auto-detect database type based on environment
 const usePostgres = !!process.env.DATABASE_URL;
-const { initDatabase } = usePostgres 
+const { initDatabase, getDatabase } = usePostgres 
   ? require('./database/postgres-init') 
   : require('./database/init');
 
@@ -194,6 +194,355 @@ app.get('/api/unions', async (req, res) => {
   }
 });
 
+// POST /api/rooms - Create a new room
+app.post('/api/rooms', async (req, res) => {
+  try {
+    const { property_id, name, capacity, dimensions, built_in_av, features } = req.body;
+    
+    // Basic validation
+    if (!property_id || !name) {
+      return res.status(400).json({
+        error: 'Validation Error',
+        message: 'Property ID and name are required'
+      });
+    }
+    
+    const db = getDatabase();
+    const client = await db.connect();
+    
+    try {
+      const result = await client.query(`
+        INSERT INTO rooms (property_id, name, capacity, dimensions, built_in_av, features) 
+        VALUES ($1, $2, $3, $4, $5, $6)
+        RETURNING *
+      `, [property_id, name, capacity || 0, dimensions || '', built_in_av || '', features || '']);
+      
+      logger.info('Room created successfully', { id: result.rows[0].id, name, property_id });
+      res.status(201).json(result.rows[0]);
+    } finally {
+      client.release();
+    }
+  } catch (error) {
+    logger.error('Create room override endpoint error:', error);
+    res.status(500).json({
+      error: 'Internal Server Error',
+      message: 'An error occurred while creating the room'
+    });
+  }
+});
+
+// POST /api/inventory - Create a new inventory item  
+app.post('/api/inventory', async (req, res) => {
+  try {
+    const { property_id, name, description, category, sub_category, quantity_available, status, asset_tag, model, manufacturer, condition_notes } = req.body;
+    
+    // Basic validation
+    if (!property_id || !name) {
+      return res.status(400).json({
+        error: 'Validation Error',
+        message: 'Property ID and name are required'
+      });
+    }
+    
+    const db = getDatabase();
+    const client = await db.connect();
+    
+    try {
+      const result = await client.query(`
+        INSERT INTO inventory_items 
+        (property_id, name, description, category, sub_category, quantity_available, status, asset_tag, model, manufacturer, condition_notes) 
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+        RETURNING *
+      `, [
+        property_id, 
+        name, 
+        description || '', 
+        category || 'General', 
+        sub_category || '', 
+        quantity_available || 0, 
+        status || 'available', 
+        asset_tag || '', 
+        model || '', 
+        manufacturer || '', 
+        condition_notes || ''
+      ]);
+      
+      logger.info('Inventory item created successfully', { id: result.rows[0].id, name, property_id });
+      res.status(201).json(result.rows[0]);
+    } finally {
+      client.release();
+    }
+  } catch (error) {
+    logger.error('Create inventory override endpoint error:', error);
+    res.status(500).json({
+      error: 'Internal Server Error',
+      message: 'An error occurred while creating the inventory item'
+    });
+  }
+});
+
+// POST /api/unions - Create a new union
+app.post('/api/unions', async (req, res) => {
+  try {
+    const { property_id, local_number, name, trade, regular_hours_start, regular_hours_end, regular_rate, overtime_rate, doubletime_rate, overtime_threshold, doubletime_threshold, weekend_rules, holiday_rules, contact_info, notes } = req.body;
+    
+    // Basic validation
+    if (!property_id || !local_number || !name || !trade) {
+      return res.status(400).json({
+        success: false,
+        message: 'Property ID, local number, name, and trade are required'
+      });
+    }
+    
+    const db = getDatabase();
+    const client = await db.connect();
+    
+    try {
+      const result = await client.query(`
+        INSERT INTO unions (
+          property_id, local_number, name, trade, 
+          regular_hours_start, regular_hours_end,
+          regular_rate, overtime_rate, doubletime_rate,
+          overtime_threshold, doubletime_threshold,
+          weekend_rules, holiday_rules, contact_info, notes
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
+        RETURNING *
+      `, [
+        property_id,
+        local_number,
+        name,
+        trade,
+        regular_hours_start || '08:00',
+        regular_hours_end || '17:00',
+        regular_rate || null,
+        overtime_rate || null,
+        doubletime_rate || null,
+        overtime_threshold || 8,
+        doubletime_threshold || 12,
+        weekend_rules || '',
+        holiday_rules || '',
+        contact_info || '',
+        notes || ''
+      ]);
+      
+      logger.info(`Created union: Local ${local_number} - ${name}`);
+      res.status(201).json({
+        success: true,
+        message: 'Union created successfully',
+        data: result.rows[0]
+      });
+    } finally {
+      client.release();
+    }
+  } catch (error) {
+    logger.error('Create union override endpoint error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to create union',
+      error: error.message
+    });
+  }
+});
+
+// PUT /api/inventory/:id - Update inventory item
+app.put('/api/inventory/:id', async (req, res) => {
+  try {
+    const itemId = parseInt(req.params.id);
+    const { property_id, name, description, category, sub_category, quantity_available, status, asset_tag, model, manufacturer, condition_notes } = req.body;
+    
+    if (isNaN(itemId)) {
+      return res.status(400).json({
+        error: 'Invalid Input',
+        message: 'Item ID must be a number'
+      });
+    }
+    
+    if (!property_id || !name) {
+      return res.status(400).json({
+        error: 'Validation Error',
+        message: 'Property ID and name are required'
+      });
+    }
+    
+    const db = getDatabase();
+    const client = await db.connect();
+    
+    try {
+      const result = await client.query(`
+        UPDATE inventory_items 
+        SET property_id = $1, name = $2, description = $3, category = $4, sub_category = $5, 
+            quantity_available = $6, status = $7, asset_tag = $8, model = $9, manufacturer = $10, 
+            condition_notes = $11, updated_at = CURRENT_TIMESTAMP 
+        WHERE id = $12
+        RETURNING *
+      `, [
+        property_id, 
+        name, 
+        description || '', 
+        category || 'General', 
+        sub_category || '', 
+        quantity_available || 0, 
+        status || 'available', 
+        asset_tag || '', 
+        model || '', 
+        manufacturer || '', 
+        condition_notes || '', 
+        itemId
+      ]);
+      
+      if (result.rowCount === 0) {
+        return res.status(404).json({
+          error: 'Not Found',
+          message: 'Inventory item not found'
+        });
+      }
+      
+      logger.info('Inventory item updated successfully', { id: itemId, name });
+      res.json(result.rows[0]);
+    } finally {
+      client.release();
+    }
+  } catch (error) {
+    logger.error('Update inventory override endpoint error:', error);
+    res.status(500).json({
+      error: 'Internal Server Error',
+      message: 'An error occurred while updating the inventory item'
+    });
+  }
+});
+
+// PUT /api/rooms/:id - Update room
+app.put('/api/rooms/:id', async (req, res) => {
+  try {
+    const roomId = parseInt(req.params.id);
+    const { property_id, name, capacity, dimensions, built_in_av, features } = req.body;
+    
+    if (isNaN(roomId)) {
+      return res.status(400).json({
+        error: 'Invalid Input',
+        message: 'Room ID must be a number'
+      });
+    }
+    
+    if (!property_id || !name) {
+      return res.status(400).json({
+        error: 'Validation Error',
+        message: 'Property ID and name are required'
+      });
+    }
+    
+    const db = getDatabase();
+    const client = await db.connect();
+    
+    try {
+      const result = await client.query(`
+        UPDATE rooms 
+        SET property_id = $1, name = $2, capacity = $3, dimensions = $4, 
+            built_in_av = $5, features = $6, updated_at = CURRENT_TIMESTAMP 
+        WHERE id = $7
+        RETURNING *
+      `, [property_id, name, capacity || 0, dimensions || '', built_in_av || '', features || '', roomId]);
+      
+      if (result.rowCount === 0) {
+        return res.status(404).json({
+          error: 'Not Found',
+          message: 'Room not found'
+        });
+      }
+      
+      logger.info('Room updated successfully', { id: roomId, name });
+      res.json(result.rows[0]);
+    } finally {
+      client.release();
+    }
+  } catch (error) {
+    logger.error('Update room override endpoint error:', error);
+    res.status(500).json({
+      error: 'Internal Server Error',
+      message: 'An error occurred while updating the room'
+    });
+  }
+});
+
+// PUT /api/unions/:id - Update union
+app.put('/api/unions/:id', async (req, res) => {
+  try {
+    const unionId = parseInt(req.params.id);
+    const { property_id, local_number, name, trade, regular_hours_start, regular_hours_end, regular_rate, overtime_rate, doubletime_rate, overtime_threshold, doubletime_threshold, weekend_rules, holiday_rules, contact_info, notes } = req.body;
+    
+    if (isNaN(unionId)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Union ID must be a number'
+      });
+    }
+    
+    if (!property_id || !local_number || !name || !trade) {
+      return res.status(400).json({
+        success: false,
+        message: 'Property ID, local number, name, and trade are required'
+      });
+    }
+    
+    const db = getDatabase();
+    const client = await db.connect();
+    
+    try {
+      const result = await client.query(`
+        UPDATE unions SET 
+          property_id = $1, local_number = $2, name = $3, trade = $4,
+          regular_hours_start = $5, regular_hours_end = $6,
+          regular_rate = $7, overtime_rate = $8, doubletime_rate = $9,
+          overtime_threshold = $10, doubletime_threshold = $11,
+          weekend_rules = $12, holiday_rules = $13, contact_info = $14, notes = $15,
+          updated_at = CURRENT_TIMESTAMP
+        WHERE id = $16
+        RETURNING *
+      `, [
+        property_id,
+        local_number,
+        name,
+        trade,
+        regular_hours_start || '08:00',
+        regular_hours_end || '17:00',
+        regular_rate || null,
+        overtime_rate || null,
+        doubletime_rate || null,
+        overtime_threshold || 8,
+        doubletime_threshold || 12,
+        weekend_rules || '',
+        holiday_rules || '',
+        contact_info || '',
+        notes || '',
+        unionId
+      ]);
+      
+      if (result.rowCount === 0) {
+        return res.status(404).json({
+          success: false,
+          message: 'Union not found'
+        });
+      }
+      
+      logger.info(`Updated union: Local ${local_number} - ${name}`);
+      res.json({
+        success: true,
+        message: 'Union updated successfully',
+        data: result.rows[0]
+      });
+    } finally {
+      client.release();
+    }
+  } catch (error) {
+    logger.error('Update union override endpoint error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to update union',
+      error: error.message
+    });
+  }
+});
+
 // API Routes (remaining routes that work fine)
 app.use('/api/properties', propertiesRouter);
 app.use('/api/labor-rules', laborRulesRouter);
@@ -363,7 +712,250 @@ app.get('/api/rooms-simple', async (req, res) => {
   }
 });
 
+// DELETE /api/inventory/:id - Delete inventory item
+app.delete('/api/inventory/:id', async (req, res) => {
+  try {
+    const itemId = parseInt(req.params.id);
+    
+    if (isNaN(itemId)) {
+      return res.status(400).json({
+        error: 'Invalid Input',
+        message: 'Item ID must be a number'
+      });
+    }
+    
+    const db = getDatabase();
+    const client = await db.connect();
+    
+    try {
+      const result = await client.query('DELETE FROM inventory_items WHERE id = $1', [itemId]);
+      
+      if (result.rowCount === 0) {
+        return res.status(404).json({
+          error: 'Not Found',
+          message: 'Inventory item not found'
+        });
+      }
+      
+      logger.info('Inventory item deleted successfully', { id: itemId });
+      res.json({
+        message: 'Inventory item deleted successfully',
+        id: itemId
+      });
+    } finally {
+      client.release();
+    }
+  } catch (error) {
+    logger.error('Delete inventory override endpoint error:', error);
+    res.status(500).json({
+      error: 'Internal Server Error',
+      message: 'An error occurred while deleting the inventory item'
+    });
+  }
+});
 
+// DELETE /api/rooms/:id - Delete room
+app.delete('/api/rooms/:id', async (req, res) => {
+  try {
+    const roomId = parseInt(req.params.id);
+    
+    if (isNaN(roomId)) {
+      return res.status(400).json({
+        error: 'Invalid Input',
+        message: 'Room ID must be a number'
+      });
+    }
+    
+    const db = getDatabase();
+    const client = await db.connect();
+    
+    try {
+      const result = await client.query('DELETE FROM rooms WHERE id = $1', [roomId]);
+      
+      if (result.rowCount === 0) {
+        return res.status(404).json({
+          error: 'Not Found',
+          message: 'Room not found'
+        });
+      }
+      
+      logger.info('Room deleted successfully', { id: roomId });
+      res.json({
+        message: 'Room deleted successfully',
+        id: roomId
+      });
+    } finally {
+      client.release();
+    }
+  } catch (error) {
+    logger.error('Delete room override endpoint error:', error);
+    res.status(500).json({
+      error: 'Internal Server Error',
+      message: 'An error occurred while deleting the room'
+    });
+  }
+});
+
+// DELETE /api/unions/:id - Delete union
+app.delete('/api/unions/:id', async (req, res) => {
+  try {
+    const unionId = parseInt(req.params.id);
+    
+    if (isNaN(unionId)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Union ID must be a number'
+      });
+    }
+    
+    const db = getDatabase();
+    const client = await db.connect();
+    
+    try {
+      const result = await client.query('DELETE FROM unions WHERE id = $1', [unionId]);
+      
+      if (result.rowCount === 0) {
+        return res.status(404).json({
+          success: false,
+          message: 'Union not found'
+        });
+      }
+      
+      logger.info(`Deleted union with ID: ${unionId}`);
+      res.json({
+        success: true,
+        message: 'Union deleted successfully'
+      });
+    } finally {
+      client.release();
+    }
+  } catch (error) {
+    logger.error('Delete union override endpoint error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to delete union',
+      error: error.message
+    });
+  }
+});
+
+// GET /api/inventory/:id - Get specific inventory item
+app.get('/api/inventory/:id', async (req, res) => {
+  try {
+    const itemId = parseInt(req.params.id);
+    
+    if (isNaN(itemId)) {
+      return res.status(400).json({
+        error: 'Invalid Input',
+        message: 'Item ID must be a number'
+      });
+    }
+    
+    const db = getDatabase();
+    const client = await db.connect();
+    
+    try {
+      const result = await client.query('SELECT * FROM inventory_items WHERE id = $1', [itemId]);
+      
+      if (result.rows.length === 0) {
+        return res.status(404).json({
+          error: 'Not Found',
+          message: 'Inventory item not found'
+        });
+      }
+      
+      res.json(result.rows[0]);
+    } finally {
+      client.release();
+    }
+  } catch (error) {
+    logger.error('Get inventory item override endpoint error:', error);
+    res.status(500).json({
+      error: 'Internal Server Error',
+      message: 'An error occurred while fetching the inventory item'
+    });
+  }
+});
+
+// GET /api/rooms/:id - Get specific room
+app.get('/api/rooms/:id', async (req, res) => {
+  try {
+    const roomId = parseInt(req.params.id);
+    
+    if (isNaN(roomId)) {
+      return res.status(400).json({
+        error: 'Invalid Input',
+        message: 'Room ID must be a number'
+      });
+    }
+    
+    const db = getDatabase();
+    const client = await db.connect();
+    
+    try {
+      const result = await client.query('SELECT * FROM rooms WHERE id = $1', [roomId]);
+      
+      if (result.rows.length === 0) {
+        return res.status(404).json({
+          error: 'Not Found',
+          message: 'Room not found'
+        });
+      }
+      
+      res.json(result.rows[0]);
+    } finally {
+      client.release();
+    }
+  } catch (error) {
+    logger.error('Get room override endpoint error:', error);
+    res.status(500).json({
+      error: 'Internal Server Error',
+      message: 'An error occurred while fetching the room'
+    });
+  }
+});
+
+// GET /api/unions/:id - Get specific union
+app.get('/api/unions/:id', async (req, res) => {
+  try {
+    const unionId = parseInt(req.params.id);
+    
+    if (isNaN(unionId)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Union ID must be a number'
+      });
+    }
+    
+    const db = getDatabase();
+    const client = await db.connect();
+    
+    try {
+      const result = await client.query('SELECT * FROM unions WHERE id = $1', [unionId]);
+      
+      if (result.rows.length === 0) {
+        return res.status(404).json({
+          success: false,
+          message: 'Union not found'
+        });
+      }
+      
+      res.json({
+        success: true,
+        data: result.rows[0]
+      });
+    } finally {
+      client.release();
+    }
+  } catch (error) {
+    logger.error('Get union override endpoint error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to fetch union details',
+      error: error.message
+    });
+  }
+});
 
 // Serve frontend for all non-API routes (SPA fallback)
 if (process.env.NODE_ENV === 'production') {

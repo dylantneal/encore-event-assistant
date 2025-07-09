@@ -38,35 +38,45 @@ export const PropertyProvider: React.FC<PropertyProviderProps> = ({ children }) 
   const [selectedProperty, setSelectedProperty] = useState<Property | null>(null);
   const [properties, setProperties] = useState<Property[]>([]);
   const [isLoading, setIsLoading] = useState(false);
+  const [isMounted, setIsMounted] = useState(true);
 
   const loadProperties = async () => {
+    if (isLoading || !isMounted) return; // Prevent multiple simultaneous calls
+    
     setIsLoading(true);
     try {
       const response = await api.get('/properties');
-      setProperties(response.data);
       
-      // Only restore from localStorage if available, don't auto-select first property
-      if (!selectedProperty && response.data.length > 0) {
-        // Check localStorage only on client side
-        let savedPropertyId: string | null = null;
-        if (typeof window !== 'undefined') {
-          savedPropertyId = localStorage.getItem('selectedPropertyId');
-        }
+      // Only update state if component is still mounted
+      if (isMounted) {
+        setProperties(response.data);
         
-        if (savedPropertyId) {
-          const savedProperty = response.data.find(
-            (p: Property) => p.id === parseInt(savedPropertyId)
-          );
-          if (savedProperty) {
-            setSelectedProperty(savedProperty);
+        // Only restore from localStorage if available, don't auto-select first property
+        if (!selectedProperty && response.data.length > 0) {
+          // Check localStorage only on client side
+          let savedPropertyId: string | null = null;
+          if (typeof window !== 'undefined') {
+            savedPropertyId = localStorage.getItem('selectedPropertyId');
           }
-          // Don't auto-select first property - let user choose
+          
+          if (savedPropertyId) {
+            const savedProperty = response.data.find(
+              (p: Property) => p.id === parseInt(savedPropertyId)
+            );
+            if (savedProperty) {
+              setSelectedProperty(savedProperty);
+            }
+            // Don't auto-select first property - let user choose
+          }
         }
       }
     } catch (error) {
       console.error('Failed to load properties:', error);
+      // Don't clear properties on error to maintain any existing data
     } finally {
-      setIsLoading(false);
+      if (isMounted) {
+        setIsLoading(false);
+      }
     }
   };
 
@@ -84,6 +94,12 @@ export const PropertyProvider: React.FC<PropertyProviderProps> = ({ children }) 
 
   useEffect(() => {
     loadProperties();
+  }, []); // Only load once on mount
+
+  useEffect(() => {
+    return () => {
+      setIsMounted(false);
+    };
   }, []);
 
   const value: PropertyContextType = {

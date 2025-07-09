@@ -355,30 +355,34 @@ ANALYSIS INSTRUCTIONS:
 
   async getRealInventory(propertyId) {
     const db = this.getDb();
-    return new Promise((resolve, reject) => {
-      db.all(
-        'SELECT name, model, description, quantity_available, category, sub_category FROM inventory_items WHERE property_id = ? AND status = "available" ORDER BY category, name',
-        [propertyId],
-        (err, items) => {
-          if (err) reject(err);
-          else resolve(items || []);
-        }
+    const client = await db.connect();
+    
+    try {
+      const result = await client.query(
+        'SELECT name, model, description, quantity_available, category, sub_category FROM inventory_items WHERE property_id = $1 AND status = $2 ORDER BY category, name',
+        [propertyId, 'available']
       );
-    });
+      
+      return result.rows || [];
+    } finally {
+      client.release();
+    }
   }
 
   async getRooms(propertyId) {
     const db = this.getDb();
-    return new Promise((resolve, reject) => {
-      db.all(
-        'SELECT name, capacity, dimensions, built_in_av, features FROM rooms WHERE property_id = ? ORDER BY name',
-        [propertyId],
-        (err, rooms) => {
-          if (err) reject(err);
-          else resolve(rooms || []);
-        }
+    const client = await db.connect();
+    
+    try {
+      const result = await client.query(
+        'SELECT name, capacity, dimensions, built_in_av, features FROM rooms WHERE property_id = $1 ORDER BY name',
+        [propertyId]
       );
-    });
+      
+      return result.rows || [];
+    } finally {
+      client.release();
+    }
   }
 
   async processFile(fileData) {
@@ -433,64 +437,46 @@ ANALYSIS INSTRUCTIONS:
 
   async getBasicProperty(propertyId) {
     const db = this.getDb();
-    return new Promise((resolve, reject) => {
-      db.get('SELECT * FROM properties WHERE id = ?', [propertyId], (err, property) => {
-        if (err) reject(err);
-        else resolve(property);
-      });
-    });
+    const client = await db.connect();
+    
+    try {
+      const result = await client.query('SELECT * FROM properties WHERE id = $1', [propertyId]);
+      return result.rows[0];
+    } finally {
+      client.release();
+    }
   }
 
   async getPropertyContext(propertyId) {
     const db = this.getDb();
-    return new Promise((resolve, reject) => {
+    const client = await db.connect();
+    
+    try {
       const context = {};
 
       // Get property info
-      db.get('SELECT * FROM properties WHERE id = ?', [propertyId], (err, property) => {
-        if (err) {
-          reject(err);
-          return;
-        }
+      const propertyResult = await client.query('SELECT * FROM properties WHERE id = $1', [propertyId]);
+      context.property = propertyResult.rows[0];
 
-        context.property = property;
+      // Get rooms
+      const roomsResult = await client.query('SELECT * FROM rooms WHERE property_id = $1', [propertyId]);
+      context.rooms = roomsResult.rows;
 
-        // Get rooms
-        db.all('SELECT * FROM rooms WHERE property_id = ?', [propertyId], (err, rooms) => {
-          if (err) {
-            reject(err);
-            return;
-          }
+      // Get inventory summary
+      const inventoryResult = await client.query(
+        'SELECT category, sub_category, COUNT(*) as count, SUM(quantity_available) as total_quantity FROM inventory_items WHERE property_id = $1 AND status = $2 GROUP BY category, sub_category',
+        [propertyId, 'available']
+      );
+      context.inventory = inventoryResult.rows;
 
-          context.rooms = rooms;
+      // Get labor rules
+      const laborRulesResult = await client.query('SELECT * FROM labor_rules WHERE property_id = $1', [propertyId]);
+      context.laborRules = laborRulesResult.rows;
 
-          // Get inventory summary
-          db.all(
-            'SELECT category, sub_category, COUNT(*) as count, SUM(quantity_available) as total_quantity FROM inventory_items WHERE property_id = ? AND status = "available" GROUP BY category, sub_category',
-            [propertyId],
-            (err, inventory) => {
-              if (err) {
-                reject(err);
-                return;
-              }
-
-              context.inventory = inventory;
-
-              // Get labor rules
-              db.all('SELECT * FROM labor_rules WHERE property_id = ?', [propertyId], (err, laborRules) => {
-                if (err) {
-                  reject(err);
-                  return;
-                }
-
-                context.laborRules = laborRules;
-                resolve(context);
-              });
-            }
-          );
-        });
-      });
-    });
+      return context;
+    } finally {
+      client.release();
+    }
   }
 
   buildSystemMessage(propertyData) {
@@ -680,103 +666,103 @@ Remember: You're representing a premier venue and are an expert in AV systems. M
 
   async fetchInventory(args, propertyId) {
     const db = this.getDb();
-    return new Promise((resolve, reject) => {
-      let query = 'SELECT * FROM inventory_items WHERE property_id = ? AND status = "available"';
-      const params = [propertyId];
+    const client = await db.connect();
+    
+    try {
+      let query = 'SELECT * FROM inventory_items WHERE property_id = $1 AND status = $2';
+      const params = [propertyId, 'available'];
+      let paramCount = 2;
 
       if (args.category) {
-        query += ' AND category = ?';
+        query += ` AND category = $${++paramCount}`;
         params.push(args.category);
       }
 
       if (args.sub_category) {
-        query += ' AND sub_category = ?';
+        query += ` AND sub_category = $${++paramCount}`;
         params.push(args.sub_category);
       }
 
       if (args.search_term) {
-        query += ' AND (name LIKE ? OR description LIKE ?)';
+        query += ` AND (name ILIKE $${++paramCount} OR description ILIKE $${++paramCount})`;
         params.push(`%${args.search_term}%`, `%${args.search_term}%`);
       }
 
-      db.all(query, params, (err, items) => {
-        if (err) {
-          reject(err);
-          return;
-        }
+      const result = await client.query(query, params);
+      const items = result.rows;
 
-        resolve({
-          items: items.map(item => ({
-            name: item.name,
-            description: item.description,
-            category: item.category,
-            sub_category: item.sub_category,
-            quantity_available: item.quantity_available,
-            model: item.model,
-            manufacturer: item.manufacturer
-          })),
-          total_items: items.length
-        });
-      });
-    });
+      return {
+        items: items.map(item => ({
+          name: item.name,
+          description: item.description,
+          category: item.category,
+          sub_category: item.sub_category,
+          quantity_available: item.quantity_available,
+          model: item.model,
+          manufacturer: item.manufacturer
+        })),
+        total_items: items.length
+      };
+    } finally {
+      client.release();
+    }
   }
 
   async checkRoomCapabilities(args, propertyId) {
     const db = this.getDb();
-    return new Promise((resolve, reject) => {
-      db.get(
-        'SELECT * FROM rooms WHERE property_id = ? AND name = ?',
-        [propertyId, args.room_name],
-        (err, room) => {
-          if (err) {
-            reject(err);
-            return;
-          }
-
-          if (!room) {
-            resolve({
-              compatible: false,
-              reason: 'Room not found'
-            });
-            return;
-          }
-
-          // Simple compatibility check based on room features
-          const builtInAV = room.built_in_av || '';
-          const features = room.features || '';
-          const roomInfo = (builtInAV + ' ' + features).toLowerCase();
-
-          const compatibility = {
-            compatible: true,
-            room_info: {
-              name: room.name,
-              capacity: room.capacity,
-              dimensions: room.dimensions,
-              built_in_av: room.built_in_av,
-              features: room.features
-            },
-            equipment_notes: []
-          };
-
-          // Check each piece of equipment if provided
-          if (args.equipment_list && args.equipment_list.length > 0) {
-            args.equipment_list.forEach(equipment => {
-              const equipmentLower = equipment.toLowerCase();
-              if (equipmentLower.includes('projector') && !roomInfo.includes('projection')) {
-                compatibility.equipment_notes.push(`${equipment}: No built-in projection, will need portable setup`);
-              }
-              if (equipmentLower.includes('audio') && !roomInfo.includes('sound')) {
-                compatibility.equipment_notes.push(`${equipment}: No built-in audio, will need full audio setup`);
-              }
-            });
-          } else {
-            compatibility.equipment_notes.push('No specific equipment provided for compatibility check');
-          }
-
-          resolve(compatibility);
-        }
+    const client = await db.connect();
+    
+    try {
+      const result = await client.query(
+        'SELECT * FROM rooms WHERE property_id = $1 AND name = $2',
+        [propertyId, args.room_name]
       );
-    });
+      
+      const room = result.rows[0];
+
+      if (!room) {
+        return {
+          compatible: false,
+          reason: 'Room not found'
+        };
+      }
+
+      // Simple compatibility check based on room features
+      const builtInAV = room.built_in_av || '';
+      const features = room.features || '';
+      const roomInfo = (builtInAV + ' ' + features).toLowerCase();
+
+      const compatibility = {
+        compatible: true,
+        room_info: {
+          name: room.name,
+          capacity: room.capacity,
+          dimensions: room.dimensions,
+          built_in_av: room.built_in_av,
+          features: room.features
+        },
+        equipment_notes: []
+      };
+
+      // Check each piece of equipment if provided
+      if (args.equipment_list && args.equipment_list.length > 0) {
+        args.equipment_list.forEach(equipment => {
+          const equipmentLower = equipment.toLowerCase();
+          if (equipmentLower.includes('projector') && !roomInfo.includes('projection')) {
+            compatibility.equipment_notes.push(`${equipment}: No built-in projection, will need portable setup`);
+          }
+          if (equipmentLower.includes('audio') && !roomInfo.includes('sound')) {
+            compatibility.equipment_notes.push(`${equipment}: No built-in audio, will need full audio setup`);
+          }
+        });
+      } else {
+        compatibility.equipment_notes.push('No specific equipment provided for compatibility check');
+      }
+
+      return compatibility;
+    } finally {
+      client.release();
+    }
   }
 
   async validateOrder(args, propertyId) {
@@ -786,63 +772,60 @@ Remember: You're representing a premier venue and are an expert in AV systems. M
 
   async calculateLaborRequirements(args, propertyId) {
     const db = this.getDb();
-    return new Promise((resolve, reject) => {
+    const client = await db.connect();
+    
+    try {
       // Get labor rules for this property
-      db.all('SELECT * FROM labor_rules WHERE property_id = ?', [propertyId], (err, laborRules) => {
-        if (err) {
-          reject(err);
-          return;
-        }
+      const result = await client.query('SELECT * FROM labor_rules WHERE property_id = $1', [propertyId]);
+      const laborRules = result.rows;
 
-        // Parse labor rules
-        const rules = {};
-        laborRules.forEach(rule => {
-          rules[rule.rule_type] = JSON.parse(rule.rule_data);
-        });
-
-        // Calculate technician requirements
-        const technicianRatio = rules.technician_ratio || { attendees_per_tech: 50, minimum_techs: 1 };
-        const setupTimes = rules.setup_time || { audio_setup: 2, video_setup: 1.5, lighting_setup: 3, breakdown: 1 };
-
-        const requiredTechs = Math.max(
-          technicianRatio.minimum_techs,
-          Math.ceil(args.attendees / technicianRatio.attendees_per_tech)
-        );
-
-        // Calculate setup time based on equipment
-        let totalSetupTime = 0;
-        args.equipment_list.forEach(item => {
-          const category = item.category.toLowerCase();
-          if (category.includes('audio')) {
-            totalSetupTime += setupTimes.audio_setup || 2;
-          } else if (category.includes('video')) {
-            totalSetupTime += setupTimes.video_setup || 1.5;
-          } else if (category.includes('lighting')) {
-            totalSetupTime += setupTimes.lighting_setup || 3;
-          }
-        });
-
-        const breakdownTime = setupTimes.breakdown || 1;
-        const totalLaborHours = (totalSetupTime + args.event_duration + breakdownTime) * requiredTechs;
-
-        resolve({
-          required_technicians: requiredTechs,
-          setup_time_hours: totalSetupTime,
-          event_duration_hours: args.event_duration,
-          breakdown_time_hours: breakdownTime,
-          total_labor_hours: totalLaborHours,
-          labor_schedule: {
-            setup_start: `${totalSetupTime} hours before event`,
-            event_support: `${requiredTechs} technicians during event`,
-            breakdown: `${breakdownTime} hours after event`
-          }
-        });
+      // Parse labor rules
+      const rules = {};
+      laborRules.forEach(rule => {
+        rules[rule.rule_type] = JSON.parse(rule.rule_data);
       });
-    });
+
+      // Calculate technician requirements
+      const technicianRatio = rules.technician_ratio || { attendees_per_tech: 50, minimum_techs: 1 };
+      const setupTimes = rules.setup_time || { audio_setup: 2, video_setup: 1.5, lighting_setup: 3, breakdown: 1 };
+
+      const requiredTechs = Math.max(
+        technicianRatio.minimum_techs,
+        Math.ceil(args.attendees / technicianRatio.attendees_per_tech)
+      );
+
+      // Calculate setup time based on equipment
+      let totalSetupTime = 0;
+      args.equipment_list.forEach(item => {
+        const category = item.category.toLowerCase();
+        if (category.includes('audio')) {
+          totalSetupTime += setupTimes.audio_setup || 2;
+        } else if (category.includes('video')) {
+          totalSetupTime += setupTimes.video_setup || 1.5;
+        } else if (category.includes('lighting')) {
+          totalSetupTime += setupTimes.lighting_setup || 3;
+        }
+      });
+
+      const breakdownTime = setupTimes.breakdown || 1;
+      const totalLaborHours = (totalSetupTime + args.event_duration + breakdownTime) * requiredTechs;
+
+      return {
+        required_technicians: requiredTechs,
+        setup_time_hours: totalSetupTime,
+        event_duration_hours: args.event_duration,
+        breakdown_time_hours: breakdownTime,
+        total_labor_hours: totalLaborHours,
+        labor_schedule: {
+          setup_start: `${totalSetupTime} hours before event`,
+          event_support: `${requiredTechs} technicians during event`,
+          breakdown: `${breakdownTime} hours after event`
+        }
+      };
+    } finally {
+      client.release();
+    }
   }
-
-
-
 }
 
 module.exports = OpenAIService; 

@@ -305,113 +305,104 @@ router.get('/export', async (req, res) => {
     }
     
     const db = getDatabase();
+    const client = await db.connect();
     
-    // Get property info
-    const property = await new Promise((resolve, reject) => {
-      db.get('SELECT * FROM properties WHERE id = ?', [property_id], (err, row) => {
-        if (err) reject(err);
-        else resolve(row);
-      });
-    });
-    
-    if (!property) {
-      return res.status(404).json({
-        error: 'Property Not Found',
-        message: 'The specified property does not exist'
-      });
+    try {
+      // Get property info
+      const propertyResult = await client.query('SELECT * FROM properties WHERE id = $1', [property_id]);
+      const property = propertyResult.rows[0];
+      
+      if (!property) {
+        return res.status(404).json({
+          error: 'Property Not Found',
+          message: 'The specified property does not exist'
+        });
+      }
+      
+      // Get all data for the property
+      const [inventoryResult, roomsResult, laborRulesResult] = await Promise.all([
+        client.query('SELECT * FROM inventory_items WHERE property_id = $1', [property_id]),
+        client.query('SELECT * FROM rooms WHERE property_id = $1', [property_id]),
+        client.query('SELECT * FROM labor_rules WHERE property_id = $1', [property_id])
+      ]);
+      
+      const inventory = inventoryResult.rows;
+      const rooms = roomsResult.rows;
+      const laborRules = laborRulesResult.rows;
+      
+      // Create workbook
+      const workbook = XLSX.utils.book_new();
+      
+      // Property info sheet
+      const propertyInfo = [{
+        'Property Name': property.name,
+        'Location': property.location,
+        'Description': property.description,
+        'Contact Info': property.contact_info,
+        'Export Date': new Date().toISOString(),
+        'Total Rooms': rooms.length,
+        'Total Inventory Items': inventory.length,
+        'Total Labor Rules': laborRules.length
+      }];
+      
+      // Transform data for export - Encore format
+      const inventoryExport = inventory.map(item => ({
+        'Asset ID': item.asset_tag || item.id,
+        'Category': item.category,
+        'Sub Category': item.sub_category,
+        'Item Type': item.sub_category, // Use sub_category as item type
+        'Description': item.description,
+        'Model': item.model,
+        'Status': item.status === 'available' ? 'On Hand' : 
+                  item.status === 'maintenance' ? 'Damaged' : 
+                  item.status,
+        'Condition Notes': item.condition_notes,
+        'Last Updated': new Date().toLocaleDateString(),
+        'Location': 'PROPERTY',
+        'Quantity Available': item.quantity_available
+      }));
+      
+      const roomsExport = rooms.map(room => ({
+        'Name': room.name,
+        'Capacity': room.capacity,
+        'Dimensions': room.dimensions,
+        'Built-in AV': room.built_in_av,
+        'Features': room.features
+      }));
+      
+      const laborRulesExport = laborRules.map(rule => ({
+        'Rule Type': rule.rule_type,
+        'Description': rule.description,
+        'Rule Data (JSON)': rule.rule_data
+      }));
+      
+      // Create worksheets
+      const propertyWS = XLSX.utils.json_to_sheet(propertyInfo);
+      const inventoryWS = XLSX.utils.json_to_sheet(inventoryExport);
+      const roomsWS = XLSX.utils.json_to_sheet(roomsExport);
+      const laborRulesWS = XLSX.utils.json_to_sheet(laborRulesExport);
+      
+      // Add worksheets to workbook
+      XLSX.utils.book_append_sheet(workbook, propertyWS, 'Property Info');
+      XLSX.utils.book_append_sheet(workbook, inventoryWS, 'Inventory');
+      XLSX.utils.book_append_sheet(workbook, roomsWS, 'Rooms');
+      XLSX.utils.book_append_sheet(workbook, laborRulesWS, 'Labor Rules');
+      
+      // Generate buffer
+      const buffer = XLSX.write(workbook, { type: 'buffer', bookType: 'xlsx' });
+      
+      // Set headers for file download
+      const filename = `${property.name.replace(/[^a-zA-Z0-9]/g, '_')}-export-${new Date().toISOString().split('T')[0]}.xlsx`;
+      res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+      res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+      
+      res.send(buffer);
+      
+      logger.info('Data exported successfully', { property_id, filename });
+      
+    } finally {
+      client.release();
     }
-    
-    // Get all data for the property
-    const [inventory, rooms, laborRules] = await Promise.all([
-      new Promise((resolve, reject) => {
-        db.all('SELECT * FROM inventory_items WHERE property_id = ?', [property_id], (err, rows) => {
-          if (err) reject(err);
-          else resolve(rows);
-        });
-      }),
-      new Promise((resolve, reject) => {
-        db.all('SELECT * FROM rooms WHERE property_id = ?', [property_id], (err, rows) => {
-          if (err) reject(err);
-          else resolve(rows);
-        });
-      }),
-      new Promise((resolve, reject) => {
-        db.all('SELECT * FROM labor_rules WHERE property_id = ?', [property_id], (err, rows) => {
-          if (err) reject(err);
-          else resolve(rows);
-        });
-      })
-    ]);
-    
-    // Create workbook
-    const workbook = XLSX.utils.book_new();
-    
-    // Property info sheet
-    const propertyInfo = [{
-      'Property Name': property.name,
-      'Location': property.location,
-      'Description': property.description,
-      'Contact Info': property.contact_info,
-      'Export Date': new Date().toISOString(),
-      'Total Rooms': rooms.length,
-      'Total Inventory Items': inventory.length,
-      'Total Labor Rules': laborRules.length
-    }];
-    
-    // Transform data for export - Encore format
-    const inventoryExport = inventory.map(item => ({
-      'Asset ID': item.asset_tag || item.id,
-      'Category': item.category,
-      'Sub Category': item.sub_category,
-      'Item Type': item.sub_category, // Use sub_category as item type
-      'Description': item.description,
-      'Model': item.model,
-      'Status': item.status === 'available' ? 'On Hand' : 
-                item.status === 'maintenance' ? 'Damaged' : 
-                item.status,
-      'Condition Notes': item.condition_notes,
-      'Last Updated': new Date().toLocaleDateString(),
-      'Location': 'PROPERTY',
-      'Quantity Available': item.quantity_available
-    }));
-    
-    const roomsExport = rooms.map(room => ({
-      'Name': room.name,
-      'Capacity': room.capacity,
-      'Dimensions': room.dimensions,
-      'Built-in AV': room.built_in_av,
-      'Features': room.features
-    }));
-    
-    const laborRulesExport = laborRules.map(rule => ({
-      'Rule Type': rule.rule_type,
-      'Description': rule.description,
-      'Rule Data (JSON)': rule.rule_data
-    }));
-    
-    // Create worksheets
-    const propertyWS = XLSX.utils.json_to_sheet(propertyInfo);
-    const inventoryWS = XLSX.utils.json_to_sheet(inventoryExport);
-    const roomsWS = XLSX.utils.json_to_sheet(roomsExport);
-    const laborRulesWS = XLSX.utils.json_to_sheet(laborRulesExport);
-    
-    // Add worksheets to workbook
-    XLSX.utils.book_append_sheet(workbook, propertyWS, 'Property Info');
-    XLSX.utils.book_append_sheet(workbook, inventoryWS, 'Inventory');
-    XLSX.utils.book_append_sheet(workbook, roomsWS, 'Rooms');
-    XLSX.utils.book_append_sheet(workbook, laborRulesWS, 'Labor Rules');
-    
-    // Generate buffer
-    const buffer = XLSX.write(workbook, { type: 'buffer', bookType: 'xlsx' });
-    
-    // Set headers for file download
-    const filename = `${property.name.replace(/[^a-zA-Z0-9]/g, '_')}-export-${new Date().toISOString().split('T')[0]}.xlsx`;
-    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
-    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
-    
-    res.send(buffer);
-    
-    logger.info('Data exported successfully', { property_id, filename });
     
   } catch (error) {
     logger.error('Error exporting data:', error);
@@ -528,58 +519,55 @@ router.post('/inventory', upload.single('file'), async (req, res) => {
     const normalizedData = normalizeInventoryData(rawData);
     
     const db = getDatabase();
+    const client = await db.connect();
     
-    // If replace_existing is true, clear existing inventory for this property
-    if (replace_existing === 'true') {
-      await new Promise((resolve, reject) => {
-        db.run('DELETE FROM inventory_items WHERE property_id = ?', [property_id], (err) => {
-          if (err) reject(err);
-          else resolve();
-        });
-      });
-      logger.info(`🗑️ Cleared existing inventory for property ${property_id}`);
-    }
-    
-    const importResults = {
+    // Declare importResults at the right scope
+    let importResults = {
       total: normalizedData.length,
       imported: 0,
       skipped: 0,
       errors: []
     };
     
-    // Process each normalized row
-    for (const item of normalizedData) {
-      try {
-        // Skip rows with no meaningful data
-        if (!item.name || item.name === 'Unknown Item' || item.name.trim() === '') {
-          importResults.errors.push(`Row ${item._rowNumber}: No valid item name found`);
-          importResults.skipped++;
-          continue;
-        }
-        
-        // Validate the normalized item
-        const validation = validateInventoryItem({
-          property_id,
-          name: item.name,
-          description: item.description,
-          category: item.category,
-          sub_category: item.subcategory,
-          quantity_available: item.quantity,
-          status: item.status
-        });
-        
-        if (!validation.valid) {
-          importResults.errors.push(`Row ${item._rowNumber}: ${validation.errors.join(', ')}`);
-          importResults.skipped++;
-          continue;
-        }
-        
-        // Insert the lean, normalized item
-        await new Promise((resolve, reject) => {
-          db.run(`
-            INSERT OR REPLACE INTO inventory_items 
+    try {
+      // If replace_existing is true, clear existing inventory for this property
+      if (replace_existing === 'true') {
+        await client.query('DELETE FROM inventory_items WHERE property_id = $1', [property_id]);
+        logger.info(`🗑️ Cleared existing inventory for property ${property_id}`);
+      }
+      
+      // Process each normalized row
+      for (const item of normalizedData) {
+        try {
+          // Skip rows with no meaningful data
+          if (!item.name || item.name === 'Unknown Item' || item.name.trim() === '') {
+            importResults.errors.push(`Row ${item._rowNumber}: No valid item name found`);
+            importResults.skipped++;
+            continue;
+          }
+          
+          // Validate the normalized item
+          const validation = validateInventoryItem({
+            property_id,
+            name: item.name,
+            description: item.description,
+            category: item.category,
+            sub_category: item.subcategory,
+            quantity_available: item.quantity,
+            status: item.status
+          });
+          
+          if (!validation.valid) {
+            importResults.errors.push(`Row ${item._rowNumber}: ${validation.errors.join(', ')}`);
+            importResults.skipped++;
+            continue;
+          }
+          
+          // Insert the lean, normalized item using PostgreSQL syntax
+          await client.query(`
+            INSERT INTO inventory_items 
             (property_id, name, description, category, sub_category, quantity_available, status, asset_tag, model, manufacturer, condition_notes)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
           `, [
             property_id,
             item.name,
@@ -592,30 +580,30 @@ router.post('/inventory', upload.single('file'), async (req, res) => {
             item.model,
             item.manufacturer,
             item.notes
-          ], function(err) {
-            if (err) reject(err);
-            else resolve();
-          });
-        });
-        
-        importResults.imported++;
-        
-      } catch (error) {
-        importResults.errors.push(`Row ${item._rowNumber}: ${error.message}`);
-        importResults.skipped++;
+          ]);
+          
+          importResults.imported++;
+          
+        } catch (error) {
+          importResults.errors.push(`Row ${item._rowNumber}: ${error.message}`);
+          importResults.skipped++;
+        }
       }
+      
+      // Clean up uploaded file
+      const fs = require('fs');
+      fs.unlinkSync(req.file.path);
+      
+      logger.info('✅ Inventory import completed:', importResults);
+      
+      res.json({
+        message: `Import completed: ${importResults.imported} items imported, ${importResults.skipped} skipped`,
+        results: importResults
+      });
+      
+    } finally {
+      client.release();
     }
-    
-    // Clean up uploaded file
-    const fs = require('fs');
-    fs.unlinkSync(req.file.path);
-    
-    logger.info('✅ Inventory import completed:', importResults);
-    
-    res.json({
-      message: `Import completed: ${importResults.imported} items imported, ${importResults.skipped} skipped`,
-      results: importResults
-    });
     
   } catch (error) {
     logger.error('❌ Error importing inventory:', error);
@@ -659,60 +647,64 @@ router.post('/rooms', upload.single('file'), async (req, res) => {
     }
     
     const db = getDatabase();
-    const importResults = {
-      total: data.length,
-      imported: 0,
-      skipped: 0,
-      errors: []
-    };
+    const client = await db.connect();
     
-    // Process each row
-    for (let i = 0; i < data.length; i++) {
-      const row = data[i];
+    try {
+      const importResults = {
+        total: data.length,
+        imported: 0,
+        skipped: 0,
+        errors: []
+      };
       
-      try {
-        const name = row.Name || row.name || row['Room Name'];
-        const capacity = parseInt(row.Capacity || row.capacity || row['Max Capacity']) || 0;
-        const dimensions = row.Dimensions || row.dimensions || row.Size || '';
-        const builtInAv = row['Built-in AV'] || row['Built-in AV Equipment'] || row['AV Equipment'] || '';
-        const features = row.Features || row.features || row.Amenities || '';
+      // Process each row
+      for (let i = 0; i < data.length; i++) {
+        const row = data[i];
         
-        if (!name) {
-          importResults.errors.push(`Row ${i + 2}: Missing room name`);
-          importResults.skipped++;
-          continue;
-        }
-        
-        // Insert room
-        await new Promise((resolve, reject) => {
-          db.run(`
-            INSERT OR REPLACE INTO rooms 
+        try {
+          const name = row.Name || row.name || row['Room Name'];
+          const capacity = parseInt(row.Capacity || row.capacity || row['Max Capacity']) || 0;
+          const dimensions = row.Dimensions || row.dimensions || row.Size || '';
+          const builtInAv = row['Built-in AV'] || row['Built-in AV Equipment'] || row['AV Equipment'] || '';
+          const features = row.Features || row.features || row.Amenities || '';
+          
+          if (!name) {
+            importResults.errors.push(`Row ${i + 2}: Missing room name`);
+            importResults.skipped++;
+            continue;
+          }
+          
+          // Insert room using PostgreSQL syntax
+          await client.query(`
+            INSERT INTO rooms 
             (property_id, name, capacity, dimensions, built_in_av, features)
-            VALUES (?, ?, ?, ?, ?, ?)
-          `, [property_id, name, capacity, dimensions, builtInAv, features], function(err) {
-            if (err) reject(err);
-            else resolve();
-          });
-        });
-        
-        importResults.imported++;
-        
-      } catch (error) {
-        importResults.errors.push(`Row ${i + 2}: ${error.message}`);
-        importResults.skipped++;
+            VALUES ($1, $2, $3, $4, $5, $6)
+          `, [property_id, name, capacity, dimensions, builtInAv, features]);
+          
+          importResults.imported++;
+          
+        } catch (error) {
+          importResults.errors.push(`Row ${i + 2}: ${error.message}`);
+          importResults.skipped++;
+        }
       }
+      
+      // Clean up uploaded file
+      const fs = require('fs');
+      fs.unlinkSync(req.file.path);
+      
+      logger.info('Rooms import completed', importResults);
+      
+      res.json({
+        message: 'Import completed',
+        results: importResults
+      });
+      
+    } finally {
+      client.release();
     }
     
-    // Clean up uploaded file
-    const fs = require('fs');
-    fs.unlinkSync(req.file.path);
-    
-    logger.info('Rooms import completed', importResults);
-    
-    res.json({
-      message: 'Import completed',
-      results: importResults
-    });
+
     
   } catch (error) {
     logger.error('Error importing rooms:', error);
@@ -756,67 +748,69 @@ router.post('/labor', upload.single('file'), async (req, res) => {
     }
     
     const db = getDatabase();
-    const importResults = {
-      total: data.length,
-      imported: 0,
-      skipped: 0,
-      errors: []
-    };
+    const client = await db.connect();
     
-    // Process each row
-    for (let i = 0; i < data.length; i++) {
-      const row = data[i];
+    try {
+      const importResults = {
+        total: data.length,
+        imported: 0,
+        skipped: 0,
+        errors: []
+      };
       
-      try {
-        const ruleType = row['Rule Type'] || row.rule_type || row.type;
-        const description = row.Description || row.description || '';
-        const ruleData = row['Rule Data (JSON)'] || row.rule_data || row.data;
+      // Process each row
+      for (let i = 0; i < data.length; i++) {
+        const row = data[i];
         
-        if (!ruleType || !ruleData) {
-          importResults.errors.push(`Row ${i + 2}: Missing rule type or rule data`);
-          importResults.skipped++;
-          continue;
-        }
-        
-        // Validate JSON
         try {
-          JSON.parse(ruleData);
-        } catch (jsonError) {
-          importResults.errors.push(`Row ${i + 2}: Invalid JSON in rule data`);
-          importResults.skipped++;
-          continue;
-        }
-        
-        // Insert labor rule
-        await new Promise((resolve, reject) => {
-          db.run(`
-            INSERT OR REPLACE INTO labor_rules 
+          const ruleType = row['Rule Type'] || row.rule_type || row.type;
+          const description = row.Description || row.description || '';
+          const ruleData = row['Rule Data (JSON)'] || row.rule_data || row.data;
+          
+          if (!ruleType || !ruleData) {
+            importResults.errors.push(`Row ${i + 2}: Missing rule type or rule data`);
+            importResults.skipped++;
+            continue;
+          }
+          
+          // Validate JSON
+          try {
+            JSON.parse(ruleData);
+          } catch (jsonError) {
+            importResults.errors.push(`Row ${i + 2}: Invalid JSON in rule data`);
+            importResults.skipped++;
+            continue;
+          }
+          
+          // Insert labor rule using PostgreSQL syntax
+          await client.query(`
+            INSERT INTO labor_rules 
             (property_id, rule_type, description, rule_data)
-            VALUES (?, ?, ?, ?)
-          `, [property_id, ruleType, description, ruleData], function(err) {
-            if (err) reject(err);
-            else resolve();
-          });
-        });
-        
-        importResults.imported++;
-        
-      } catch (error) {
-        importResults.errors.push(`Row ${i + 2}: ${error.message}`);
-        importResults.skipped++;
+            VALUES ($1, $2, $3, $4)
+          `, [property_id, ruleType, description, ruleData]);
+          
+          importResults.imported++;
+          
+        } catch (error) {
+          importResults.errors.push(`Row ${i + 2}: ${error.message}`);
+          importResults.skipped++;
+        }
       }
+      
+      // Clean up uploaded file
+      const fs = require('fs');
+      fs.unlinkSync(req.file.path);
+      
+      logger.info('Labor rules import completed', importResults);
+      
+      res.json({
+        message: 'Import completed',
+        results: importResults
+      });
+      
+    } finally {
+      client.release();
     }
-    
-    // Clean up uploaded file
-    const fs = require('fs');
-    fs.unlinkSync(req.file.path);
-    
-    logger.info('Labor rules import completed', importResults);
-    
-    res.json({
-      message: 'Import completed',
-      results: importResults
-    });
     
   } catch (error) {
     logger.error('Error importing labor rules:', error);

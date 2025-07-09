@@ -15,9 +15,12 @@ const initDatabase = async () => {
     pool = new Pool({
       connectionString,
       ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false,
-      max: 10, // Maximum number of connections
+      max: 20, // Maximum number of connections
       idleTimeoutMillis: 30000,
-      connectionTimeoutMillis: 2000,
+      connectionTimeoutMillis: 5000,
+      acquireTimeoutMillis: 10000,
+      keepAlive: true,
+      keepAliveInitialDelayMillis: 0,
     });
 
     // Test the connection

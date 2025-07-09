@@ -15,20 +15,16 @@ router.get('/', async (req, res) => {
     let params = [];
     
     if (property_id) {
-      query += ' WHERE property_id = ?';
+      query += ' WHERE property_id = $1';
       params.push(parseInt(property_id));
     }
     
     query += ' ORDER BY rule_type, created_at DESC';
     
-    db.all(query, params, (err, rules) => {
-      if (err) {
-        logger.error('Error fetching labor rules:', err);
-        return res.status(500).json({
-          error: 'Database Error',
-          message: 'Failed to fetch labor rules'
-        });
-      }
+    const client = await db.connect();
+    try {
+      const result = await client.query(query, params);
+      const rules = result.rows;
       
       // Parse rule_data JSON for each rule
       const parsedRules = rules.map(rule => ({
@@ -37,7 +33,9 @@ router.get('/', async (req, res) => {
       }));
       
       res.json(parsedRules);
-    });
+    } finally {
+      client.release();
+    }
   } catch (error) {
     logger.error('Labor rules endpoint error:', error);
     res.status(500).json({
@@ -60,14 +58,10 @@ router.get('/:id', async (req, res) => {
       });
     }
     
-    db.get('SELECT * FROM labor_rules WHERE id = ?', [ruleId], (err, rule) => {
-      if (err) {
-        logger.error('Error fetching labor rule:', err);
-        return res.status(500).json({
-          error: 'Database Error',
-          message: 'Failed to fetch labor rule'
-        });
-      }
+    const client = await db.connect();
+    try {
+      const result = await client.query('SELECT * FROM labor_rules WHERE id = $1', [ruleId]);
+      const rule = result.rows[0];
       
       if (!rule) {
         return res.status(404).json({
@@ -83,7 +77,9 @@ router.get('/:id', async (req, res) => {
       };
       
       res.json(parsedRule);
-    });
+    } finally {
+      client.release();
+    }
   } catch (error) {
     logger.error('Labor rule endpoint error:', error);
     res.status(500).json({
@@ -117,40 +113,27 @@ router.post('/', async (req, res) => {
     }
     
     const db = getDatabase();
+    const client = await db.connect();
     
-    db.run(
-      'INSERT INTO labor_rules (property_id, rule_type, rule_data, description) VALUES (?, ?, ?, ?)',
-      [property_id, rule_type, ruleDataString, description],
-      function(err) {
-        if (err) {
-          logger.error('Error creating labor rule:', err);
-          return res.status(500).json({
-            error: 'Database Error',
-            message: 'Failed to create labor rule'
-          });
-        }
-        
-        // Fetch the created rule
-        db.get('SELECT * FROM labor_rules WHERE id = ?', [this.lastID], (err, rule) => {
-          if (err) {
-            logger.error('Error fetching created labor rule:', err);
-            return res.status(500).json({
-              error: 'Database Error',
-              message: 'Labor rule created but failed to fetch details'
-            });
-          }
-          
-          // Parse rule_data JSON
-          const parsedRule = {
-            ...rule,
-            rule_data: JSON.parse(rule.rule_data)
-          };
-          
-          logger.info('Labor rule created successfully', { id: this.lastID, rule_type, property_id });
-          res.status(201).json(parsedRule);
-        });
-      }
-    );
+    try {
+      const result = await client.query(
+        'INSERT INTO labor_rules (property_id, rule_type, rule_data, description) VALUES ($1, $2, $3, $4) RETURNING *',
+        [property_id, rule_type, ruleDataString, description]
+      );
+      
+      const rule = result.rows[0];
+      
+      // Parse rule_data JSON
+      const parsedRule = {
+        ...rule,
+        rule_data: JSON.parse(rule.rule_data)
+      };
+      
+      logger.info('Labor rule created successfully', { id: rule.id, rule_type, property_id });
+      res.status(201).json(parsedRule);
+    } finally {
+      client.release();
+    }
   } catch (error) {
     logger.error('Create labor rule endpoint error:', error);
     res.status(500).json({
@@ -192,47 +175,34 @@ router.put('/:id', async (req, res) => {
     }
     
     const db = getDatabase();
+    const client = await db.connect();
     
-    db.run(
-      'UPDATE labor_rules SET property_id = ?, rule_type = ?, rule_data = ?, description = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
-      [property_id, rule_type, ruleDataString, description, ruleId],
-      function(err) {
-        if (err) {
-          logger.error('Error updating labor rule:', err);
-          return res.status(500).json({
-            error: 'Database Error',
-            message: 'Failed to update labor rule'
-          });
-        }
-        
-        if (this.changes === 0) {
-          return res.status(404).json({
-            error: 'Not Found',
-            message: 'Labor rule not found'
-          });
-        }
-        
-        // Fetch the updated rule
-        db.get('SELECT * FROM labor_rules WHERE id = ?', [ruleId], (err, rule) => {
-          if (err) {
-            logger.error('Error fetching updated labor rule:', err);
-            return res.status(500).json({
-              error: 'Database Error',
-              message: 'Labor rule updated but failed to fetch details'
-            });
-          }
-          
-          // Parse rule_data JSON
-          const parsedRule = {
-            ...rule,
-            rule_data: JSON.parse(rule.rule_data)
-          };
-          
-          logger.info('Labor rule updated successfully', { id: ruleId, rule_type });
-          res.json(parsedRule);
+    try {
+      const result = await client.query(
+        'UPDATE labor_rules SET property_id = $1, rule_type = $2, rule_data = $3, description = $4, updated_at = CURRENT_TIMESTAMP WHERE id = $5 RETURNING *',
+        [property_id, rule_type, ruleDataString, description, ruleId]
+      );
+      
+      if (result.rowCount === 0) {
+        return res.status(404).json({
+          error: 'Not Found',
+          message: 'Labor rule not found'
         });
       }
-    );
+      
+      const rule = result.rows[0];
+      
+      // Parse rule_data JSON
+      const parsedRule = {
+        ...rule,
+        rule_data: JSON.parse(rule.rule_data)
+      };
+      
+      logger.info('Labor rule updated successfully', { id: ruleId, rule_type });
+      res.json(parsedRule);
+    } finally {
+      client.release();
+    }
   } catch (error) {
     logger.error('Update labor rule endpoint error:', error);
     res.status(500).json({
@@ -255,17 +225,12 @@ router.delete('/:id', async (req, res) => {
     }
     
     const db = getDatabase();
+    const client = await db.connect();
     
-    db.run('DELETE FROM labor_rules WHERE id = ?', [ruleId], function(err) {
-      if (err) {
-        logger.error('Error deleting labor rule:', err);
-        return res.status(500).json({
-          error: 'Database Error',
-          message: 'Failed to delete labor rule'
-        });
-      }
+    try {
+      const result = await client.query('DELETE FROM labor_rules WHERE id = $1', [ruleId]);
       
-      if (this.changes === 0) {
+      if (result.rowCount === 0) {
         return res.status(404).json({
           error: 'Not Found',
           message: 'Labor rule not found'
@@ -277,7 +242,9 @@ router.delete('/:id', async (req, res) => {
         message: 'Labor rule deleted successfully',
         id: ruleId
       });
-    });
+    } finally {
+      client.release();
+    }
   } catch (error) {
     logger.error('Delete labor rule endpoint error:', error);
     res.status(500).json({
@@ -297,24 +264,22 @@ router.get('/types', async (req, res) => {
     let params = [];
     
     if (property_id) {
-      query += ' WHERE property_id = ?';
+      query += ' WHERE property_id = $1';
       params.push(parseInt(property_id));
     }
     
     query += ' ORDER BY rule_type';
     
-    db.all(query, params, (err, types) => {
-      if (err) {
-        logger.error('Error fetching rule types:', err);
-        return res.status(500).json({
-          error: 'Database Error',
-          message: 'Failed to fetch rule types'
-        });
-      }
+    const client = await db.connect();
+    try {
+      const result = await client.query(query, params);
+      const types = result.rows;
       
       const ruleTypes = types.map(type => type.rule_type);
       res.json(ruleTypes);
-    });
+    } finally {
+      client.release();
+    }
   } catch (error) {
     logger.error('Rule types endpoint error:', error);
     res.status(500).json({
